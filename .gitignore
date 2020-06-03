@@ -1,0 +1,6 @@
+build/windows/pioneer/.vs/
+build/windows/pioneer/Debug/
+test/windows/testPioneer/.vs/
+test/windows/testPioneer/Debug/
+test/windows/testPioneer/testPioneer.VC.db
+build/windows/pioneer/pioneer.VC.db
