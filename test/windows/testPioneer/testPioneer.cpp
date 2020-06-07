@@ -9,8 +9,6 @@ int main(int argc, const char* argv[])
 {
 	printf("hello\n");
 	pioneer::Pioneer p;
-	p.fun();
-	//return pioneer::Pioneer::testPioneer(argc, argv);
-	return 0;
+	return pioneer::Pioneer::testPioneer(argc, argv);
 }
 
