@@ -8,7 +8,6 @@
 int main(int argc, const char* argv[])
 {
 	printf("hello\n");
-	pioneer::Pioneer p;
 	return pioneer::Pioneer::testPioneer(argc, argv);
 }
 
