@@ -200,8 +200,8 @@ namespace pioneer
 	{
 		av_register_all();
 
-		const char* infile_name = "mojito.mp3";
-		const char* outfile_name = "mojito.pcm";
+		const char* infile_name =  "california.mkv";// "mojito.mp3";
+		const char* outfile_name = "california.pcm";// "mojito.pcm";
 		FILE* outfile = fopen(outfile_name, "wb");
 		if (outfile == NULL)
 		{
@@ -317,6 +317,209 @@ namespace pioneer
 		return 0;
 	}
 
+	int Pioneer::testDecodeVideo2(int argc, const char* argv[])
+	{
+		av_register_all();
+
+		const char* infile_name = "california.mkv";// "mojito.mp3";
+		const char* outfile_name = "california.out.yuv";// "mojito.pcm";
+		FILE* outfile = fopen(outfile_name, "wb");
+		if (outfile == NULL)
+		{
+			printf("open %s failed\n", outfile);
+			return -1;
+		}
+
+		AVFormatContext *pFormatCtx = NULL;
+		int ret = avformat_open_input(&pFormatCtx, infile_name, NULL, NULL);
+		if (ret < 0)
+		{
+			fclose(outfile);
+			printf("avformat_open_input open %s failed\n", infile_name);
+			return -2;
+		}
+
+		ret = avformat_find_stream_info(pFormatCtx, NULL);
+		if (ret < 0)
+		{
+			fclose(outfile);
+			avformat_close_input(&pFormatCtx);
+			printf("Couldn't find stream information in file %s\n", infile_name);
+			return -3;
+		}
+		av_dump_format(pFormatCtx, 0, infile_name, false);
+
+		int audioStreamID = -1;
+		for (int i = 0; i<pFormatCtx->nb_streams; i++)
+		{
+			if (pFormatCtx->streams[i]->codec->codec_type == AVMEDIA_TYPE_VIDEO)
+			{
+				audioStreamID = i;
+				break;
+			}
+		}
+		if (audioStreamID == -1)
+		{
+			fclose(outfile);
+			avformat_close_input(&pFormatCtx);
+			printf("Didn't find a audio stream in file %s\n", infile_name);
+			return -4;
+		}
+
+		AVCodecContext* pCodecCtx = pFormatCtx->streams[audioStreamID]->codec;
+
+		AVCodec* pCodec = avcodec_find_decoder(pCodecCtx->codec_id);
+		if (pCodec == NULL)
+		{
+			printf("Codec type %d  not found\n", pCodecCtx->codec_id);
+			return -5;
+		}
+		if (avcodec_open2(pCodecCtx, pCodec, NULL) < 0)
+		{
+			avcodec_close(pCodecCtx);
+			printf("Could not open codec\n");
+			return -6;
+		}
+
+		static AVPacket packet;
+		AVFrame* frame = av_frame_alloc();
+		bool end_of_stream = false;
+		av_init_packet(&packet);
+		while (true)
+		{
+			do
+			{
+				if (packet.data != NULL)
+					av_free_packet(&packet);
+
+				if (av_read_frame(pFormatCtx, &packet)<0)
+				{
+					end_of_stream = true;
+					break;
+				}
+			} while (packet.stream_index != audioStreamID);
+			// here, a new audio packet from the stream is available
+
+			if (end_of_stream)
+				break;
+
+			printf("packetsize = %d\n", packet.size);
+
+
+			int got_picture = 0;
+			ret = avcodec_decode_video2(pCodecCtx, frame, &got_picture, &packet);
+			if (ret < 0) {
+				printf("Decode Error.\n");
+				return -1;
+			}
+			static int fi = 0;
+			int hit = 600;
+			if (got_picture)
+			{
+				switch (pCodecCtx->pix_fmt)
+				{
+					case AV_PIX_FMT_YUV422P:
+					{
+						int index = 0;
+						int y_i = 0, u_i = 0, v_i = 0;
+						for (index = 0; index < frame->width*frame->height * 2;)
+						{
+							//outputframe[index++] = frame->data[0][y_i++];
+							//outputframe[index++] = frame->data[1][u_i++];
+							//outputframe[index++] = frame->data[0][y_i++];
+							//outputframe[index++] = frame->data[2][v_i++];
+						}
+					}break;
+					case AV_PIX_FMT_YUV420P:
+					{
+						
+						fi++;
+						//int bts = av_get_bytes_per_sample(pCodecCtx->pix_fmt);
+						uint8_t* data0 = frame->data[0];
+						if (fi>=hit) fwrite(data0, frame->width*frame->height, 1, outfile);
+
+						uint8_t* data1 = frame->data[1];
+						if (fi >= hit) fwrite(data1, frame->width/2 * frame->height/2, 1, outfile);
+
+						uint8_t* data2 = frame->data[2];
+						if (fi >= hit) fwrite(data2, frame->width/2 * frame->height/2, 1, outfile);
+
+						if (fi >= hit)
+							fflush(outfile);
+
+						if (fi == hit + 60)
+							return -2;
+
+					}break;
+					default:
+					{
+						printf("default format:%d\n", pCodecCtx->pix_fmt);
+						return -1;
+					}
+				}
+
+
+			}
+			av_packet_unref(&packet);
+
+			/*
+			ret = avcodec_send_packet(pCodecCtx, &packet);
+			if (ret < 0)
+			{
+				fprintf(stderr, "Error submitting the packet to the decoder\n");
+				exit(1);
+			}
+
+			ret = avcodec_receive_frame(pCodecCtx, frame);
+			if (ret < 0)
+			{
+				fprintf(stderr, "Error during decoding\n");
+				exit(1);
+			}
+
+			switch (pCodecCtx->pix_fmt)
+			{
+			case AV_PIX_FMT_YUV422P:
+			{
+				int index = 0;
+				int y_i = 0, u_i = 0, v_i = 0;
+				for (index = 0; index < frame->width*frame->height * 2;)
+				{
+					//outputframe[index++] = frame->data[0][y_i++];
+					//outputframe[index++] = frame->data[1][u_i++];
+					//outputframe[index++] = frame->data[0][y_i++];
+					//outputframe[index++] = frame->data[2][v_i++];
+				}
+			}break;
+			default:
+			{
+				printf("default format:%d\n", pCodecCtx->pix_fmt);
+				return -1;
+			}
+			}*/
+			/*
+			int data_size = av_get_bytes_per_sample(pCodecCtx->sample_fmt);
+			if (data_size < 0)
+			{
+				fprintf(stderr, "Failed to calculate data size\n");
+				exit(1);
+			}
+			for (int i = 0; i < frame->nb_samples; i++)
+			{
+				for (int ch = 0; ch < pCodecCtx->channels; ch++)
+					fwrite(frame->data[ch] + data_size*i, 1, data_size, outfile);
+			}
+			*/
+		};
+
+		if (packet.data != NULL)
+			av_free_packet(&packet);
+		avcodec_close(pCodecCtx);
+		avformat_close_input(&pFormatCtx);
+		fclose(outfile);
+		return 0;
+	}
+
 	static void pgm_save(unsigned char *buf, int wrap, int xsize, int ysize,
 		char *filename)
 	{
@@ -382,8 +585,8 @@ namespace pioneer
 		//	fprintf(stderr, "Usage: %s <input file> <output file>\n", argv[0]);
 		//	exit(0);
 		//}
-		filename = "centaur_1.mpg"; argv[1];
-		outfilename = "test.out"; argv[2];
+		filename = "calnifornia.mkv";// "centaur_1.mpg";// argv[1];
+		outfilename = "california.out";// argv[2];
 
 		pkt = av_packet_alloc();
 		if (!pkt)
@@ -474,6 +677,7 @@ namespace pioneer
 		//return testMediaInfo(argc, argv);
 		//return testDecodeMp2(argc, argv);
 		//return testDecodeAudio(argc, argv);
-		return testDecodeVideo(argc, argv);
+		//return testDecodeVideo(argc, argv);
+		return testDecodeVideo2(argc, argv);
 	}
 }

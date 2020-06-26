@@ -10,6 +10,7 @@ namespace pioneer
 		static int testDecodeMp2(int argc, const char* argv[]);
 		static int testDecodeAudio(int argc, const char* argv[]);
 		static int testDecodeVideo(int argc, const char* argv[]);
+		static int testDecodeVideo2(int argc, const char* argv[]);
 
 		static int testPioneer(int argc, const char* argv[]);
 	};
