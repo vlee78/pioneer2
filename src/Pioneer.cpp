@@ -490,6 +490,21 @@ namespace pioneer
 						res = SDL_RenderCopy(sdlRenderer, sdlTexture, NULL, &sdlRect);
 						SDL_RenderPresent(sdlRenderer);
 						SDL_Delay(20);  
+
+
+						SDL_PollEvent(&event);
+						switch (event.type)
+						{
+						case SDL_QUIT:
+							SDL_Quit();
+							//exit(0);
+							break;
+						default:
+							break;
+						};
+
+
+
 						
 					}break;
 					default:
