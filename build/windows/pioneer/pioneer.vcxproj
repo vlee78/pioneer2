@@ -79,7 +79,7 @@
     <IncludePath>..\..\..\3rdparty\ffmpeg\windows\include;$(IncludePath)</IncludePath>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
-    <IncludePath>..\..\..\3rdparty\ffmpeg\windows\include;$(IncludePath)</IncludePath>
+    <IncludePath>..\..\..\3rdparty\ffmpeg\windows\include;..\..\..\3rdparty\sdl2\windows\include;$(IncludePath)</IncludePath>
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <ClCompile>

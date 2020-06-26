@@ -3,6 +3,7 @@
 #include <string>
 #include <iostream>
 
+#include "SDL.h"
 
 extern "C" 
 {
@@ -381,6 +382,36 @@ namespace pioneer
 			return -6;
 		}
 
+
+		SDL_Window * screen = NULL;
+		SDL_Renderer* sdlRenderer = NULL;
+		SDL_Texture * sdlTexture = NULL;
+		SDL_Rect sdlRect;
+		SDL_Event event;
+		if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_TIMER)) 
+		{
+			printf("Could not initialize SDL - %s\n", SDL_GetError()); 		
+			return -1;
+		}
+		int screen_w = pCodecCtx->width;
+		int screen_h = pCodecCtx->height;
+		screen = SDL_CreateWindow("myT1", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, screen_w, screen_h, SDL_WINDOW_SHOWN);
+		if(!screen)	
+		{
+			fprintf(stderr,"Could not create window: %s\n", SDL_GetError());
+			return -1;
+		} 
+		sdlRenderer = SDL_CreateRenderer(screen, -1, 0);
+		SDL_RenderClear(sdlRenderer);
+		sdlTexture = SDL_CreateTexture(sdlRenderer, SDL_PIXELFORMAT_IYUV, SDL_TEXTUREACCESS_STREAMING, pCodecCtx->width, pCodecCtx->height); 
+		sdlRect.x = 0;
+		sdlRect.y = 0;
+		sdlRect.w = screen_w;
+		sdlRect.h = screen_h;
+
+
+
+
 		static AVPacket packet;
 		AVFrame* frame = av_frame_alloc();
 		bool end_of_stream = false;
@@ -432,7 +463,7 @@ namespace pioneer
 					}break;
 					case AV_PIX_FMT_YUV420P:
 					{
-						
+						/*
 						fi++;
 						//int bts = av_get_bytes_per_sample(pCodecCtx->pix_fmt);
 						uint8_t* data0 = frame->data[0];
@@ -449,7 +480,17 @@ namespace pioneer
 
 						if (fi == hit + 60)
 							return -2;
+						*/
 
+						int res = SDL_UpdateYUVTexture(sdlTexture, &sdlRect, 
+							frame->data[0], frame->linesize[0], 
+							frame->data[1], frame->linesize[1],
+							frame->data[2], frame->linesize[2]);
+						
+						res = SDL_RenderCopy(sdlRenderer, sdlTexture, NULL, &sdlRect);
+						SDL_RenderPresent(sdlRenderer);
+						SDL_Delay(20);  
+						
 					}break;
 					default:
 					{
@@ -517,6 +558,8 @@ namespace pioneer
 		avcodec_close(pCodecCtx);
 		avformat_close_input(&pFormatCtx);
 		fclose(outfile);
+
+		SDL_Quit();
 		return 0;
 	}
 
