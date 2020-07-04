@@ -9,7 +9,8 @@ extern "C"
 {
 	#include "libavformat/avformat.h"
 	#include "libavcodec/avcodec.h"
-
+	#include "libswscale/swscale.h"
+	#include "libavutil/imgutils.h"
 }
 
 namespace pioneer
@@ -351,15 +352,19 @@ namespace pioneer
 		av_dump_format(pFormatCtx, 0, infile_name, false);
 
 		int audioStreamID = -1;
+		int videoStreamID = -1;
 		for (int i = 0; i<pFormatCtx->nb_streams; i++)
 		{
 			if (pFormatCtx->streams[i]->codec->codec_type == AVMEDIA_TYPE_VIDEO)
 			{
+				videoStreamID = i;
+			}
+			if (pFormatCtx->streams[i]->codec->codec_type == AVMEDIA_TYPE_AUDIO)
+			{
 				audioStreamID = i;
-				break;
 			}
 		}
-		if (audioStreamID == -1)
+		if (videoStreamID == -1 || audioStreamID == -1)
 		{
 			fclose(outfile);
 			avformat_close_input(&pFormatCtx);
@@ -367,7 +372,10 @@ namespace pioneer
 			return -4;
 		}
 
-		AVCodecContext* pCodecCtx = pFormatCtx->streams[audioStreamID]->codec;
+		//avcodec_alloc_context3()
+		//avcodec_parameters_to_context()
+		//sws_getContext();
+		AVCodecContext* pCodecCtx = pFormatCtx->streams[videoStreamID]->codec;
 
 		AVCodec* pCodec = avcodec_find_decoder(pCodecCtx->codec_id);
 		if (pCodec == NULL)
@@ -428,14 +436,13 @@ namespace pioneer
 					end_of_stream = true;
 					break;
 				}
-			} while (packet.stream_index != audioStreamID);
+			} while (packet.stream_index != videoStreamID);
 			// here, a new audio packet from the stream is available
 
 			if (end_of_stream)
 				break;
 
 			printf("packetsize = %d\n", packet.size);
-
 
 			int got_picture = 0;
 			ret = avcodec_decode_video2(pCodecCtx, frame, &got_picture, &packet);
@@ -730,12 +737,131 @@ namespace pioneer
 		return 0;
 	}
 
+	///////////////////////////////////////////////////////////////////////////////////////
+
+	void saveFrame(AVFrame *avFrame, int width, int height, int frameIndex)
+	{
+		char szFilename[32];
+		sprintf(szFilename, "frame%d.ppm", frameIndex);
+		FILE* pFile = fopen(szFilename, "wb");
+		if (pFile == NULL)
+			return;
+		fprintf(pFile, "P6\n%d %d\n255\n", width, height);
+		for (int y = 0; y < height; y++)
+		{
+			fwrite(avFrame->data[0] + y * avFrame->linesize[0], 1, width * 3, pFile);
+		}
+		fclose(pFile);
+	}
+
+	int Pioneer::testDecodeVideo3(int argc, const char* argv[])
+	{
+		const char* filepath = "california.mkv";
+
+		AVFormatContext* pFormatCtx = NULL;
+		if (avformat_open_input(&pFormatCtx, filepath, NULL, NULL) != 0)
+			return -1;
+
+		if (avformat_find_stream_info(pFormatCtx, NULL) < 0)
+			return -2;
+
+		av_dump_format(pFormatCtx, 0, filepath, NULL);
+
+		int videoStreamId = -1;
+		for (int i = 0; i < pFormatCtx->nb_streams; i++)
+		{
+			if (pFormatCtx->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_VIDEO)
+			{
+				videoStreamId = i;
+				break;
+			}
+		}
+		if (videoStreamId < 0)
+			return -3;
+
+		AVCodec* pCodec = avcodec_find_decoder(pFormatCtx->streams[videoStreamId]->codecpar->codec_id);
+		if (pCodec == NULL)
+			return -4;
+		AVCodecContext* pCodecCtx = avcodec_alloc_context3(pCodec);
+		if (pCodecCtx == NULL)
+			return -5;
+		if (avcodec_parameters_to_context(pCodecCtx, pFormatCtx->streams[videoStreamId]->codecpar) < 0)
+			return -6;
+		if (avcodec_open2(pCodecCtx, pCodec, NULL) != 0)
+			return -7;
+
+		AVFrame* pFrame = av_frame_alloc();
+		if (pFrame == NULL)
+			return -8;
+		AVFrame* pFrameRgb = av_frame_alloc();
+		if (pFrameRgb == NULL)
+			return -9;
+		
+		int buflen = av_image_get_buffer_size(AV_PIX_FMT_RGB24, pCodecCtx->width, pCodecCtx->height, 32);
+		uint8_t* buffer = (uint8_t*)av_malloc(buflen);
+		av_image_fill_arrays(pFrameRgb->data, pFrameRgb->linesize, buffer, AV_PIX_FMT_RGB24, pCodecCtx->width, pCodecCtx->height, 32);
+
+		struct SwsContext* sws_ctx = sws_getContext(pCodecCtx->width, pCodecCtx->height, pCodecCtx->pix_fmt, pCodecCtx->width, pCodecCtx->height, AV_PIX_FMT_RGB24, SWS_BILINEAR, NULL, NULL, NULL);
+		if (sws_ctx == NULL)
+			return -10;
+
+		int maxFramesToDecode = 5;
+		AVPacket* pPacket = av_packet_alloc();
+		int frameOffset = 0;
+		int i = 0;
+		while (av_read_frame(pFormatCtx, pPacket) >= 0)
+		{
+			printf("[%d] %d\n", i++, pPacket->stream_index);
+			if (pPacket->stream_index == videoStreamId)
+			{
+				if (avcodec_send_packet(pCodecCtx, pPacket) < 0)
+					return -11;
+				int ret = avcodec_receive_frame(pCodecCtx, pFrame);
+				if (ret == 0)
+				{
+					sws_scale(sws_ctx, (uint8_t const * const *)pFrame->data, pFrame->linesize, 0, pCodecCtx->height, pFrameRgb->data, pFrameRgb->linesize);
+
+					saveFrame(pFrameRgb, pCodecCtx->width, pCodecCtx->height, frameOffset);
+
+					printf("Frame %c (%d) pts %d dts %d key_frame %d [coded_picture_number %d, display_picture_number %d, %dx%d]\n",
+						av_get_picture_type_char(pFrame->pict_type),
+						pFrameRgb->pts,
+						pFrameRgb->pkt_dts,
+						pFrameRgb->key_frame,
+						pFrameRgb->coded_picture_number,
+						pFrameRgb->display_picture_number,
+						pCodecCtx->width,
+						pCodecCtx->height);
+
+					if (++frameOffset >= maxFramesToDecode)
+						break;
+				}
+				else if (ret != AVERROR(EAGAIN) && ret != AVERROR_EOF)
+					return -12;
+			}
+			av_packet_unref(pPacket);
+		}
+
+		sws_freeContext(sws_ctx);
+		av_free(buffer);
+		av_packet_free(&pPacket);
+		av_frame_free(&pFrame);
+		av_free(pFrame);
+		av_frame_free(&pFrameRgb);
+		av_free(pFrameRgb);
+		avcodec_free_context(&pCodecCtx);
+		avformat_close_input(&pFormatCtx);
+		return 0;
+	}
+
+
 	int Pioneer::testPioneer(int argc, const char* argv[])
 	{
 		//return testMediaInfo(argc, argv);
 		//return testDecodeMp2(argc, argv);
 		//return testDecodeAudio(argc, argv);
 		//return testDecodeVideo(argc, argv);
-		return testDecodeVideo2(argc, argv);
+		//return testDecodeVideo2(argc, argv);
+		return testDecodeVideo3(argc, argv);
 	}
 }
