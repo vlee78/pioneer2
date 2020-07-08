@@ -4,3 +4,6 @@ test/windows/testPioneer/.vs/
 test/windows/testPioneer/Debug/
 test/windows/testPioneer/testPioneer.VC.db
 build/windows/pioneer/pioneer.VC.db
+/test/windows/testPioneer/x64
+/build/windows/pioneer/x64
+/test/windows/testPioneer/*.opendb
