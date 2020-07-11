@@ -1589,6 +1589,40 @@ namespace pioneer
 		return 0;
 	}
 
+	int testAudioDevice(int agrc, const char* argv[])
+	{
+		struct Callback
+		{
+			static void callback(void *userdata, Uint8 * stream, int len)
+			{
+				short* buffer = (short*)stream;
+				int buflen = len / sizeof(short);
+				static FILE* ff = NULL;
+				if (ff == NULL)
+					ff = fopen("mojito.pcm", "rb");
+				int res = fread(buffer, sizeof(short), buflen, ff);
+				printf("callback with len = %d, read = %d shorts\n", len, res);
+			}
+		};
+		SDL_Init(SDL_INIT_AUDIO);
+		SDL_AudioSpec want;
+		SDL_zero(want);
+		want.freq = 44100;
+		want.format = AUDIO_S16SYS;
+		want.channels = 2;
+		want.samples = 1024;
+		want.callback = Callback::callback;
+		want.userdata = NULL;
+		SDL_AudioSpec real;
+		SDL_zero(real);
+		SDL_AudioDeviceID audioDeviceID = SDL_OpenAudioDevice(NULL, 0, &want, &real, 0);
+		SDL_PauseAudioDevice(audioDeviceID, 0);
+		while (true)
+		{
+			SDL_Delay(1000);
+		}
+		return 0;
+	}
 
 	int Pioneer::testPioneer(int argc, const char* argv[])
 	{
@@ -1597,6 +1631,7 @@ namespace pioneer
 		//return testDecodeAudio(argc, argv);
 		//return testDecodeVideo(argc, argv);
 		//return testDecodeVideo2(argc, argv);
-		return testDecodeVideo3(argc, argv);
+		//return testDecodeVideo3(argc, argv);
+		return testAudioDevice(argc, argv);
 	}
 }
