@@ -325,20 +325,12 @@ namespace pioneer
 	{
 		av_register_all();
 
-		const char* infile_name = "california.mkv";// "mojito.mp3";
-		const char* outfile_name = "california.out.yuv";// "mojito.pcm";
-		FILE* outfile = fopen(outfile_name, "wb");
-		if (outfile == NULL)
-		{
-			printf("open %s failed\n", outfile);
-			return -1;
-		}
+		const char* infile_name = "test.mov";// "california.mkv";// "mojito.mp3";
 
 		AVFormatContext *pFormatCtx = NULL;
 		int ret = avformat_open_input(&pFormatCtx, infile_name, NULL, NULL);
 		if (ret < 0)
 		{
-			fclose(outfile);
 			printf("avformat_open_input open %s failed\n", infile_name);
 			return -2;
 		}
@@ -346,7 +338,6 @@ namespace pioneer
 		ret = avformat_find_stream_info(pFormatCtx, NULL);
 		if (ret < 0)
 		{
-			fclose(outfile);
 			avformat_close_input(&pFormatCtx);
 			printf("Couldn't find stream information in file %s\n", infile_name);
 			return -3;
@@ -368,7 +359,6 @@ namespace pioneer
 		}
 		if (videoStreamID == -1 || audioStreamID == -1)
 		{
-			fclose(outfile);
 			avformat_close_input(&pFormatCtx);
 			printf("Didn't find a audio stream in file %s\n", infile_name);
 			return -4;
@@ -581,7 +571,6 @@ namespace pioneer
 			av_free_packet(&packet);
 		avcodec_close(pCodecCtx);
 		avformat_close_input(&pFormatCtx);
-		fclose(outfile);
 
 		SDL_Quit();
 		return 0;
