@@ -2,7 +2,7 @@
 #include <stdio.h>
 #include <string>
 #include <iostream>
-
+#include <vector>
 #include "SDL.h"
 
 extern "C" 
@@ -1438,6 +1438,7 @@ namespace pioneer
 		if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_TIMER) != 0)
 			return -1;
 		SDL_AudioSpec wanted_specs;
+		SDL_zero(wanted_specs);
 		wanted_specs.freq = aCodecCtx->sample_rate;
 		wanted_specs.format = AUDIO_S16SYS;
 		wanted_specs.channels = aCodecCtx->channels;
@@ -1446,7 +1447,8 @@ namespace pioneer
 		wanted_specs.callback = audio_callback;
 		wanted_specs.userdata = aCodecCtx;
 		SDL_AudioSpec specs;
-		SDL_AudioDeviceID audioDeviceID = SDL_OpenAudioDevice(NULL, 0, &wanted_specs, &specs, SDL_AUDIO_ALLOW_FORMAT_CHANGE);
+		SDL_zero(specs);
+		SDL_AudioDeviceID audioDeviceID = SDL_OpenAudioDevice(NULL, 0, &wanted_specs, &specs, 0);
 		if (audioDeviceID == 0)
 		{
 			const char* error = SDL_GetError();
@@ -1613,6 +1615,161 @@ namespace pioneer
 		return 0;
 	}
 
+
+	typedef int DecodeCallback(AVCodecContext* codecCtx, AVFrame* frame, void* userCtx);
+
+	int Decode(AVCodecContext* codecCtx, AVPacket* packet, DecodeCallback callback, void* userCtx)
+	{
+		bool finish = false;
+		int res = avcodec_send_packet(codecCtx, packet);
+		while (res == 0 && finish == false)
+		{
+			AVFrame* frame = av_frame_alloc();
+			if (frame == NULL)
+				res = -1;
+			else
+			{
+				res = avcodec_receive_frame(codecCtx, frame);
+				if (res == 0)
+				{
+					if (callback != NULL)
+						res = callback(codecCtx, frame, userCtx);
+				}
+				else if (res == AVERROR(EAGAIN))
+				{
+					if (packet == NULL)
+						res = -2;
+					else
+					{
+						res = 0;
+						finish = true;
+					}
+				}
+				else if (res == AVERROR_EOF)
+				{
+					if (packet == NULL)
+					{
+						res = 0;
+						finish = true;
+					}
+					else
+						res = -3;
+				}
+				av_frame_free(&frame);
+			}
+		}
+		return res;
+	}
+
+	int testAudioDecode(int argc, const char* argv[])
+	{
+		//const char* filepath = "california.mkv";
+		//const char* filepath = = "test.mov";
+		const char* filepath = "mojito.mp3";
+
+		AVFormatContext* pFormatCtx = NULL;
+		if (avformat_open_input(&pFormatCtx, filepath, NULL, NULL) != 0)
+			return -1;
+
+		if (avformat_find_stream_info(pFormatCtx, NULL) < 0)
+			return -2;
+
+		av_dump_format(pFormatCtx, 0, filepath, NULL);
+
+		int videoStreamId = -1;
+		int audioStreamId = -1;
+		for (int i = 0; i < pFormatCtx->nb_streams; i++)
+		{
+			if (videoStreamId == -1 && pFormatCtx->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_VIDEO)
+				videoStreamId = i;
+			if (audioStreamId == -1 && pFormatCtx->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_AUDIO)
+				audioStreamId = i;
+		}
+		//if (videoStreamId < 0 || audioStreamId < 0)
+		//	return -3;
+
+		//audio
+		AVCodec* aCodec = avcodec_find_decoder(pFormatCtx->streams[audioStreamId]->codecpar->codec_id);
+		if (aCodec == NULL)
+			return -4;
+		AVCodecContext* aCodecCtx = avcodec_alloc_context3(aCodec);
+		if (aCodecCtx == NULL)
+			return -5;
+		if (avcodec_parameters_to_context(aCodecCtx, pFormatCtx->streams[audioStreamId]->codecpar) < 0)
+			return -6;
+		if (avcodec_open2(aCodecCtx, aCodec, NULL) != 0)
+			return -7;
+
+		AVFrame* pFrame = av_frame_alloc();
+		if (pFrame == NULL)
+			return -8;
+
+		AVPacket* pPacket = av_packet_alloc();
+		if (pPacket == NULL)
+			return -9;
+		
+		FILE* file = fopen("mojito_decode.pcm", "wb");
+		if (file == NULL)
+			return -10;
+		int num = 0;
+		bool end_of_file = false;
+
+		struct MyDecode
+		{
+			static int DecodeCallback(AVCodecContext* codecCtx, AVFrame* frame, void* userCtx)
+			{
+				FILE* file = (FILE*)userCtx;
+				int channels = codecCtx->channels;
+				int sampleRate = codecCtx->sample_rate;
+				AVSampleFormat sampleFmt = codecCtx->sample_fmt;
+				uint64_t channelLayout = codecCtx->channel_layout;
+				int nb_samples = frame->nb_samples;
+				uint8_t** data = frame->data;
+				int sampleBytes = av_get_bytes_per_sample(sampleFmt);
+				for (int j = 0; j < nb_samples; j++)
+				{
+					for (int k = 0; k < channels; k++)
+					{
+						uint8_t* p = data[k] + sampleBytes * j;
+						if (fwrite(p, sampleBytes, 1, file) != 1)
+							return -3;
+					}
+				}
+				fflush(file);
+				return 0;
+			}
+		};
+
+		while (true)
+		{
+			if (av_read_frame(pFormatCtx, pPacket) != 0)
+			{
+				av_packet_unref(pPacket);
+				break;
+			}
+			printf("[%d] stream_index: %d\n", num++, pPacket->stream_index);
+			if (pPacket == NULL || pPacket->stream_index == audioStreamId)
+			{
+				int res = Decode(aCodecCtx, pPacket, MyDecode::DecodeCallback, file);
+				if (res != 0)
+					return -1;
+			}
+			av_packet_unref(pPacket);
+			SDL_Event event;
+			SDL_PollEvent(&event);
+			if (event.type == SDL_QUIT)
+				break;
+		}
+		int res = Decode(aCodecCtx, NULL, MyDecode::DecodeCallback, file);
+
+
+		av_packet_free(&pPacket);
+		pPacket = NULL;
+
+		fclose(file);
+		return 0;
+	}
+
 	int Pioneer::testPioneer(int argc, const char* argv[])
 	{
 		//return testMediaInfo(argc, argv);
@@ -1621,6 +1778,7 @@ namespace pioneer
 		//return testDecodeVideo(argc, argv);
 		//return testDecodeVideo2(argc, argv);
 		//return testDecodeVideo3(argc, argv);
-		return testAudioDevice(argc, argv);
+		//return testAudioDevice(argc, argv);
+		return testAudioDecode(argc, argv);
 	}
 }
