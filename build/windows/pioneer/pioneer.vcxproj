@@ -20,9 +20,11 @@
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="..\..\..\src\Pioneer.cpp" />
+    <ClCompile Include="..\..\..\src\Pioneer2.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\..\..\src\Pioneer.h" />
+    <ClInclude Include="..\..\..\src\Pioneer2.h" />
   </ItemGroup>
   <PropertyGroup Label="Globals">
     <ProjectGuid>{9C39180F-AF6D-4504-922A-110F454397D9}</ProjectGuid>
