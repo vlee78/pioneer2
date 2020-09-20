@@ -1,0 +1,54 @@
+# Compiled Object files
+*.slo
+*.lo
+*.o
+*.obj
+
+# Compiled Dynamic libraries
+*.so
+*.dylib
+*.dll
+
+# Compiled Static libraries
+*.lai
+*.la
+*.a
+*.lib
+
+# Crystal
+crystal/sdl.cr/
+
+# OCaml
+*.cmi
+*.cmx
+
+# Executables
+*.exe
+*.out
+*.app
+main
+go/go
+
+# Pascal units
+*.ppu
+fpc/SDL2/
+
+# Nimrod cache
+nimcache
+
+# Rust
+rust/sdl2/
+Cargo.lock
+
+# C++
+c++20-cxx/c++20-cxx
+c*/*.asm
+
+# Temporary databases
+*.dblite
+
+# CMake
+build/
+CMakeCache.txt
+CMakeFiles
+inst/

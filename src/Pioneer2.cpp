@@ -454,4 +454,41 @@ namespace pioneer
 		SDL_Quit();
 		return 0;
 	}
+
+	int Pioneer2::testSDLSample(int argc, const char* argv[])
+	{
+		if (SDL_Init(SDL_INIT_EVERYTHING) != 0)
+			return -1;
+
+		SDL_Window* window = SDL_CreateWindow("hello world", 0, 0, 100, 100, SDL_WINDOW_SHOWN);
+		if (window == NULL)
+			return -2;
+
+		SDL_Renderer* renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
+		if (renderer == NULL)
+			return -3;
+
+		SDL_Surface* surface = SDL_LoadBMP("");
+		if (surface == NULL)
+			return -4;
+
+		SDL_Texture* texture = SDL_CreateTextureFromSurface(renderer, surface);
+		if (texture == NULL)
+			return -5;
+
+		for (int i = 0; i < 20; i++)
+		{
+			SDL_RenderClear(renderer);
+			SDL_RenderCopy(renderer, texture, NULL, NULL);
+			SDL_RenderPresent(renderer);
+			SDL_Delay(100);
+		}
+
+		SDL_DestroyTexture(texture);
+		SDL_FreeSurface(surface);
+		SDL_DestroyRenderer(renderer);
+		SDL_DestroyWindow(window);
+		SDL_Quit();
+		return 0;
+	}
 }

@@ -10,5 +10,6 @@ namespace pioneer
 
 		static int testSDL(int argc, const char* argv[]);
 
+		static int testSDLSample(int argc, const char* argv[]);
 	};
 }
