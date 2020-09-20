@@ -37,9 +37,15 @@ namespace pioneer
 		SDL_Thread* videoDecodeThread;
 		SwsContext * swsCtx;
 
-		SDL_Window* sdlScreen;
+		SDL_Window* sdlWindow;
 		SDL_Renderer* sdlRenderer;
 		SDL_Texture* sdlTexture;
+
+		int screenFormat;
+		int screenWidth;
+		int screenHeight;
+		int windowWidth;
+		int windowHeight;
 
 		~State()
 		{
@@ -160,19 +166,20 @@ namespace pioneer
 		int width = pCodecCtx->width;
 		int height = pCodecCtx->height;
 
-		state->sdlScreen = SDL_CreateWindow(
+		state->sdlWindow = SDL_CreateWindow(
 			"FFmpeg SDL Video Player",
-			100,
-			100,
-			1440/2,
-			900/2,
-			SDL_WINDOW_SHOWN
-			//SDL_WINDOW_OPENGL | SDL_WINDOW_ALLOW_HIGHDPI
+			SDL_WINDOWPOS_CENTERED,
+			SDL_WINDOWPOS_CENTERED,
+			state->windowWidth,
+			state->windowHeight,
+			SDL_WINDOW_SHOWN | SDL_WINDOW_OPENGL | SDL_WINDOW_ALLOW_HIGHDPI
 		);
+		if (state->sdlWindow == NULL)
+			return -1;
 		SDL_GL_SetSwapInterval(1);
 
 		//state->sdlRenderer = SDL_CreateRenderer(state->sdlScreen, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC | SDL_RENDERER_TARGETTEXTURE);
-		state->sdlRenderer = SDL_CreateRenderer(state->sdlScreen, -1, 0);
+		state->sdlRenderer = SDL_CreateRenderer(state->sdlWindow, -1, 0);
 
 		state->sdlTexture = SDL_CreateTexture(
 			state->sdlRenderer,
@@ -322,6 +329,18 @@ namespace pioneer
 		if (SDL_Init(SDL_INIT_AUDIO | SDL_INIT_VIDEO | SDL_INIT_TIMER) != 0) 
 			return -1;
 
+
+
+		SDL_DisplayMode dm;
+		if (SDL_GetDesktopDisplayMode(0, &dm) != 0)
+			return 1;
+
+		int w, h;
+		w = dm.w;
+		h = dm.h;
+
+
+
 		State state;
 		state.filepath = "test.mov";
 		state.maxFramesToDecode = 1024;
@@ -330,9 +349,15 @@ namespace pioneer
 		state.quit = false;
 		state.videoPacketsMutex = SDL_CreateMutex();
 		state.videoFramesMutex = SDL_CreateMutex();
-		state.sdlScreen = NULL;
+		state.sdlWindow = NULL;
 		state.sdlRenderer = NULL;
 		state.sdlTexture = NULL;
+
+		state.screenFormat = dm.format;
+		state.screenWidth = dm.w;
+		state.screenHeight = dm.h;
+		state.windowWidth = dm.w / 2;
+		state.windowHeight = dm.h / 2;
 		
 		if (SDL_CreateThread(decode_thread, "decode_thread", &state) == 0)
 			return -2;
@@ -351,7 +376,7 @@ namespace pioneer
 			case FF_QUIT_EVENT:
 			case SDL_QUIT:
 				state.quit = true;
-				SDL_Quit();
+				
 				break;
 			case FF_REFRESH_EVENT:
 				video_refresh_timer(&state);
@@ -364,6 +389,8 @@ namespace pioneer
 				break;
 		}
 
+		SDL_DestroyWindow(state.sdlWindow);
+		SDL_Quit();
 		return 0;
 	}
 
