@@ -366,4 +366,65 @@ namespace pioneer
 
 		return 0;
 	}
+
+	static int SDLThread(void* ctx)
+	{
+		SDL_Window* window = SDL_CreateWindow("title", 100, 100, 100, 100, SDL_WINDOW_SHOWN | SDL_WINDOW_OPENGL | SDL_WINDOW_ALLOW_HIGHDPI);
+		if (window == NULL)
+			return -2;
+
+		SDL_Delay(5000);
+
+		SDL_DestroyWindow(window);
+		return 0;
+	}
+
+	int Pioneer2::testSDL(int argc, const char* argv[])
+	{
+		if (SDL_Init(SDL_INIT_AUDIO | SDL_INIT_VIDEO | SDL_INIT_TIMER) != 0)
+			return -1;//SDL_GetError();
+
+
+		SDL_Thread* thread = SDL_CreateThread(SDLThread, "sdl", NULL);
+		if (thread == NULL)
+			return -2;
+
+		SDL_Event event;
+		bool loop = true;
+
+		while (SDL_PollEvent(&event))
+		{
+			// Later, you'll be adding your code that handles keyboard / mouse input here
+			printf("event: %d\n", event.type);
+			switch (event.type)
+			{
+			case SDL_QUIT:
+				printf("receive quit event\n");
+				loop = false;
+				break;
+			};
+		}
+
+
+		/*
+		while(loop)
+		{
+			SDL_WaitEvent(&event);
+			printf("event: %d\n", event.type);
+			switch (event.type)
+			{
+			case SDL_QUIT:
+				printf("receive quit event\n");
+				loop = false;
+				break;
+			};
+		};*/
+
+		int threadReturn = 0;
+		SDL_WaitThread(thread, &threadReturn);
+		
+
+		SDL_Quit();
+		return 0;
+	}
 }

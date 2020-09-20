@@ -10,6 +10,7 @@ int main(int argc, const char* argv[])
 {
 	printf("hello\n");
 	//return pioneer::Pioneer::testPioneer(argc, argv);
-	return pioneer::Pioneer2::testPioneer2(argc, argv);
+	//return pioneer::Pioneer2::testPioneer2(argc, argv);
+	return pioneer::Pioneer2::testSDL(argc, argv);
 }
 

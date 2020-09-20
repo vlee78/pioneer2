@@ -7,5 +7,8 @@ namespace pioneer
 	public:
 
 		static int testPioneer2(int argc, const char* argv[]);
+
+		static int testSDL(int argc, const char* argv[]);
+
 	};
 }
