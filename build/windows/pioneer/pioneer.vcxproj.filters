@@ -12,12 +12,18 @@
     <ClCompile Include="..\..\..\src\Pioneer2.cpp">
       <Filter>src</Filter>
     </ClCompile>
+    <ClCompile Include="..\..\..\src\SFPlayer.cpp">
+      <Filter>src</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\..\..\src\Pioneer.h">
       <Filter>src</Filter>
     </ClInclude>
     <ClInclude Include="..\..\..\src\Pioneer2.h">
+      <Filter>src</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\src\SFPlayer.h">
       <Filter>src</Filter>
     </ClInclude>
   </ItemGroup>
