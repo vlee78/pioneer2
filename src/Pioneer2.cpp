@@ -396,20 +396,24 @@ namespace pioneer
 
 	static int SDLThread(void* ctx)
 	{
+		//SDL_Window* window = SDL_CreateWindow("title", 100, 100, 100, 100, SDL_WINDOW_SHOWN | SDL_WINDOW_OPENGL | SDL_WINDOW_ALLOW_HIGHDPI);
+		//if (window == NULL)
+		//	return -2;
+
+		SDL_Delay(15000);
+
+		//SDL_DestroyWindow(window);
+		return 0;
+	}
+
+	static int SDLThread2(void* ctx)
+	{
+
+
 		SDL_Window* window = SDL_CreateWindow("title", 100, 100, 100, 100, SDL_WINDOW_SHOWN | SDL_WINDOW_OPENGL | SDL_WINDOW_ALLOW_HIGHDPI);
 		if (window == NULL)
 			return -2;
 
-		SDL_Delay(5000);
-
-		SDL_DestroyWindow(window);
-		return 0;
-	}
-
-	int Pioneer2::testSDL(int argc, const char* argv[])
-	{
-		if (SDL_Init(SDL_INIT_AUDIO | SDL_INIT_VIDEO | SDL_INIT_TIMER) != 0)
-			return -1;//SDL_GetError();
 
 
 		SDL_Thread* thread = SDL_CreateThread(SDLThread, "sdl", NULL);
@@ -419,37 +423,40 @@ namespace pioneer
 		SDL_Event event;
 		bool loop = true;
 
-		while (SDL_PollEvent(&event))
+		while (loop)
 		{
-			// Later, you'll be adding your code that handles keyboard / mouse input here
-			printf("event: %d\n", event.type);
-			switch (event.type)
+			if (SDL_PollEvent(&event))
 			{
-			case SDL_QUIT:
-				printf("receive quit event\n");
-				loop = false;
-				break;
-			};
-		}
+				printf("event: %d\n", event.type);
+				switch (event.type)
+				{
+				case SDL_QUIT:
+					printf("receive quit event\n");
+					loop = false;
+					break;
+				};
+			}
+		};
 
+		printf("destroying... \n");
+		SDL_DestroyWindow(window);
 
-		/*
-		while(loop)
-		{
-			SDL_WaitEvent(&event);
-			printf("event: %d\n", event.type);
-			switch (event.type)
-			{
-			case SDL_QUIT:
-				printf("receive quit event\n");
-				loop = false;
-				break;
-			};
-		};*/
-
-		int threadReturn = 0;
-		SDL_WaitThread(thread, &threadReturn);
 		
+
+
+		return 0;
+	}
+
+	int Pioneer2::testSDL(int argc, const char* argv[])
+	{
+		if (SDL_Init(SDL_INIT_AUDIO | SDL_INIT_VIDEO | SDL_INIT_TIMER) != 0)
+			return -1;
+
+
+
+		SDL_Thread* thread = SDL_CreateThread(SDLThread2, "sdl2", NULL);
+		printf("waiting for thread to complete\n");
+		SDL_WaitThread(thread, NULL);
 
 		SDL_Quit();
 		return 0;
@@ -460,7 +467,7 @@ namespace pioneer
 		if (SDL_Init(SDL_INIT_EVERYTHING) != 0)
 			return -1;
 
-		SDL_Window* window = SDL_CreateWindow("hello world", 0, 0, 100, 100, SDL_WINDOW_SHOWN);
+		SDL_Window* window = SDL_CreateWindow("hello world", 100, 100, 100, 100, SDL_WINDOW_SHOWN);
 		if (window == NULL)
 			return -2;
 
@@ -468,7 +475,7 @@ namespace pioneer
 		if (renderer == NULL)
 			return -3;
 
-		SDL_Surface* surface = SDL_LoadBMP("");
+		SDL_Surface* surface = SDL_LoadBMP("Penguins.bmp");
 		if (surface == NULL)
 			return -4;
 
