@@ -26,56 +26,62 @@ namespace pioneer
 			SDL_FreeSurface(surface);
 			surface = NULL;
 
-			for (int i = 0; i < 20; i++)
-			{
+			//for (int i = 0; i < 20; i++)
+			//{
 				SDL_RenderClear(impl->_renderer);
 				SDL_RenderCopy(impl->_renderer, texture, NULL, NULL);
 				SDL_RenderPresent(impl->_renderer);
-				SDL_Delay(1000);
-			}
+			//	SDL_Delay(1000);
+			//}
 
 			SDL_DestroyTexture(texture);
 			texture = NULL;
-
 			return 0;
 		}
 
 		static int MainThread(void* param)
 		{
 			SFPlayerImpl* impl = (SFPlayerImpl*)param;
-			long long errorCode = 0;
-
-			if (errorCode == 0 && SDL_Init(SDL_INIT_AUDIO | SDL_INIT_VIDEO | SDL_INIT_TIMER) != 0)
-				errorCode = -1;
-			if (errorCode == 0 && (impl->_window = SDL_CreateWindow("MainWindow", 100, 100, 100, 100, SDL_WINDOW_SHOWN)) == NULL)
-				errorCode = -2;
-			if (errorCode == 0 && (impl->_renderer = SDL_CreateRenderer(impl->_window, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC)) == NULL)
-				errorCode = -3;
-		
-			SDL_Thread* thread = NULL;
-			if (errorCode == 0 && (thread = SDL_CreateThread(SubThread, "SubThread", impl)) == NULL)
-				errorCode = -4;
-			if (errorCode == 0 && thread != NULL)
-				impl->_threads.push_back(thread);
-
-			if (errorCode == 0)
+			if (SDL_Init(SDL_INIT_AUDIO | SDL_INIT_VIDEO | SDL_INIT_TIMER) != 0)
 			{
-				impl->_looping = true;
-				while (impl->_looping)
+				impl->_errorCode = -1;
+				goto end;
+			}
+			impl->_window = SDL_CreateWindow("MainWindow", 100, 100, 100, 100, SDL_WINDOW_SHOWN);
+			if (impl->_window == NULL)
+			{
+				impl->_errorCode = -2;
+				goto end;
+			}
+			impl->_renderer = SDL_CreateRenderer(impl->_window, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
+			if (impl->_renderer == NULL)
+			{
+				impl->_errorCode = -3;
+				goto end;
+			}
+
+			SDL_Thread* thread = SDL_CreateThread(SubThread, "SubThread", impl);
+			if (thread == NULL)
+			{
+				impl->_errorCode = -4;
+				goto end;
+			}
+			impl->_threads.push_back(thread);
+			impl->_looping = true;
+			while (impl->_looping)
+			{
+				SDL_Event event;
+				if (SDL_PollEvent(&event))
 				{
-					SDL_Event event;
-					if (SDL_PollEvent(&event))
+					switch (event.type)
 					{
-						switch (event.type)
-						{
-						case SDL_QUIT:
-							impl->_looping = false;
-							break;
-						};
-					}
+					case SDL_QUIT:
+						impl->_looping = false;
+						break;
+					};
 				}
 			}
-			
+		end:
 			for (int i = 0; i < (int)impl->_threads.size(); i++)
 			{
 				SDL_WaitThread(impl->_threads[i], NULL);
@@ -91,7 +97,6 @@ namespace pioneer
 				impl->_window = NULL;
 			}
 			SDL_Quit();
-			impl->_errorCode = errorCode;
 			return 0;
 		}
 	};
