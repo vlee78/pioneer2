@@ -25,15 +25,12 @@ namespace pioneer
 			SDL_Texture* texture = SDL_CreateTextureFromSurface(impl->_renderer, surface);
 			SDL_FreeSurface(surface);
 			surface = NULL;
-
-			//for (int i = 0; i < 20; i++)
-			//{
+			while (impl->_looping)
+			{
 				SDL_RenderClear(impl->_renderer);
 				SDL_RenderCopy(impl->_renderer, texture, NULL, NULL);
 				SDL_RenderPresent(impl->_renderer);
-			//	SDL_Delay(1000);
-			//}
-
+			}
 			SDL_DestroyTexture(texture);
 			texture = NULL;
 			return 0;
@@ -47,7 +44,7 @@ namespace pioneer
 				impl->_errorCode = -1;
 				goto end;
 			}
-			impl->_window = SDL_CreateWindow("MainWindow", 100, 100, 100, 100, SDL_WINDOW_SHOWN);
+			impl->_window = SDL_CreateWindow("MainWindow", 100, 100, 400, 400, SDL_WINDOW_SHOWN);
 			if (impl->_window == NULL)
 			{
 				impl->_errorCode = -2;
@@ -129,6 +126,7 @@ namespace pioneer
 			Uninit();
 			return -2;
 		}
+		_impl->_looping = true;
 		return 0;
 	}
 
@@ -136,6 +134,7 @@ namespace pioneer
 	{
 		if (_impl != NULL)
 		{
+			_impl->_looping = false;
 			if (_impl->_mainthread != NULL)
 			{
 				SDL_WaitThread(_impl->_mainthread, NULL);

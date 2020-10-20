@@ -6,6 +6,8 @@
 #include "Pioneer.h"
 #include "Pioneer2.h"
 #include "SFPlayer.h"
+#include <thread>
+#include <chrono>
 
 int main(int argc, const char* argv[])
 {
@@ -17,6 +19,12 @@ int main(int argc, const char* argv[])
 
 	pioneer::SFPlayer player;
 	player.Init("haha.bmp");
+	
+	std::this_thread::sleep_for(std::chrono::seconds(5));
+
+	player.Uninit();
+
+
 	return 0;
 }
 
