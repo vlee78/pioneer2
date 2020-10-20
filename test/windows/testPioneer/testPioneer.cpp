@@ -18,7 +18,7 @@ int main(int argc, const char* argv[])
 	//return pioneer::Pioneer2::testSDLSample(argc, argv);
 
 	pioneer::SFPlayer player;
-	player.Init("haha.bmp");
+	player.Init("test.mov");
 	
 	std::this_thread::sleep_for(std::chrono::seconds(5));
 

@@ -4,6 +4,15 @@
 #include <string>
 #include <vector>
 #include "SDL.h"
+extern "C"
+{
+	#include "libavformat/avformat.h"
+	#include "libavcodec/avcodec.h"
+	#include "libswscale/swscale.h"
+	#include "libavutil/imgutils.h"
+	#include "libswresample/swresample.h"
+	#include "libavutil/opt.h"
+}
 
 namespace pioneer
 {
@@ -17,6 +26,10 @@ namespace pioneer
 		bool _looping;
 		long long _errorCode;
 		std::vector<SDL_Thread*> _threads;
+
+		AVFormatContext* _pFormatCtx;
+		int _videoStreamIndex;
+		int _audioStreamIndex;
 
 		static int SubThread(void* param)
 		{
@@ -57,6 +70,29 @@ namespace pioneer
 				goto end;
 			}
 
+
+			if (avformat_open_input(&impl->_pFormatCtx, impl->_filename.c_str(), NULL, NULL) != 0)
+			{
+				impl->_errorCode = -4;
+				goto end;
+			}
+			if (avformat_find_stream_info(impl->_pFormatCtx, NULL) < 0)
+			{
+				impl->_errorCode = -5;
+				goto end;
+			}
+			for (int i = 0; i < impl->_pFormatCtx->nb_streams; i++)
+			{
+				if (impl->_videoStreamIndex == -1 && impl->_pFormatCtx->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_VIDEO)
+					impl->_videoStreamIndex = i;
+				if (impl->_audioStreamIndex == -1 && impl->_pFormatCtx->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_AUDIO)
+					impl->_audioStreamIndex = i;
+			}
+
+
+
+
+
 			SDL_Thread* thread = SDL_CreateThread(SubThread, "SubThread", impl);
 			if (thread == NULL)
 			{
@@ -82,6 +118,12 @@ namespace pioneer
 			for (int i = 0; i < (int)impl->_threads.size(); i++)
 			{
 				SDL_WaitThread(impl->_threads[i], NULL);
+			}
+
+			if (impl->_pFormatCtx != NULL)
+			{
+				avformat_close_input(&impl->_pFormatCtx);
+				impl->_pFormatCtx = NULL;
 			}
 			if (impl->_renderer != NULL)
 			{
@@ -120,6 +162,10 @@ namespace pioneer
 		_impl->_renderer = NULL;
 		_impl->_looping = false;
 		_impl->_errorCode = 0;
+		_impl->_pFormatCtx = NULL;
+		_impl->_videoStreamIndex = -1;
+		_impl->_audioStreamIndex = -1;
+
 		_impl->_mainthread = SDL_CreateThread(SFPlayerImpl::MainThread, "SFPlayer::MainThread", _impl);
 		if (_impl->_mainthread == NULL)
 		{
