@@ -85,6 +85,65 @@ namespace pioneer
 
 		static int VideoThread(void* param)
 		{
+			SFPlayerImpl* impl = (SFPlayerImpl*)param;
+
+			while (impl->_looping)
+			{
+				AVPacket* packet = (AVPacket*)impl->_videoPackets.Dequeue();
+				if (packet == NULL)
+					continue;
+
+				if (avcodec_send_packet(impl->_pVideoCodecCtx, packet) != 0)
+				{
+					av_packet_unref(packet);
+					av_packet_free(&packet);
+					packet = NULL;
+					impl->_errorCode = -21;
+					impl->_looping = false;
+					break;
+				}
+
+				AVFrame* frame = av_frame_alloc();
+				if (frame == NULL)
+				{
+					av_packet_unref(packet);
+					av_packet_free(&packet);
+					packet = NULL;
+					impl->_errorCode = -22;
+					impl->_looping = false;
+					break;
+				}
+				int ret = 0;
+				while (ret >= 0)
+				{
+					ret = avcodec_receive_frame(impl->_pVideoCodecCtx, frame);
+					if (ret == AVERROR(EAGAIN) || ret == AVERROR_EOF)
+					{
+						av_frame_free(&frame);
+						av_free(frame);
+						frame = NULL;
+						break;
+					}
+					else if (ret < 0)
+					{
+						av_frame_free(&frame);
+						av_free(frame);
+						frame = NULL;
+						av_packet_unref(packet);
+						av_packet_free(&packet);
+						packet = NULL;
+						impl->_errorCode = -22;
+						impl->_looping = false;
+						break;
+					}
+					else
+					{
+						//
+					}
+				}
+			}
+			
+
 			/*
 			SFPlayerImpl* impl = (SFPlayerImpl*)param;
 
@@ -220,6 +279,12 @@ namespace pioneer
 					{
 						impl->_audioPackets.Enqueue(packet);
 					}
+					else
+					{
+						av_packet_unref(packet);
+						av_packet_free(&packet);
+						packet = NULL;
+					}
 				}
 			}
 
@@ -291,14 +356,13 @@ namespace pioneer
 		_impl->_videoStreamIndex = -1;
 		_impl->_audioStreamIndex = -1;
 		_impl->_pVideoCodecCtx = NULL;
-
+		
 		_impl->_mainthread = SDL_CreateThread(SFPlayerImpl::MainThread, "SFPlayer::MainThread", _impl);
 		if (_impl->_mainthread == NULL)
 		{
 			Uninit();
 			return -2;
 		}
-		_impl->_looping = true;
 		return 0;
 	}
 

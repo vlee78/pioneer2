@@ -8,6 +8,7 @@
 #include "SFPlayer.h"
 #include <thread>
 #include <chrono>
+#include <vld.h>
 
 int main(int argc, const char* argv[])
 {
@@ -21,8 +22,6 @@ int main(int argc, const char* argv[])
 	player.Init("test.mov");
 	
 	getchar();
-
-	player.Uninit();
 	return 0;
 }
 
