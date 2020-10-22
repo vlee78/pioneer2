@@ -20,11 +20,9 @@ int main(int argc, const char* argv[])
 	pioneer::SFPlayer player;
 	player.Init("test.mov");
 	
-	std::this_thread::sleep_for(std::chrono::seconds(5));
+	getchar();
 
 	player.Uninit();
-
-
 	return 0;
 }
 
