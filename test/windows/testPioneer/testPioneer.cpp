@@ -19,7 +19,8 @@ int main(int argc, const char* argv[])
 	//return pioneer::Pioneer2::testSDLSample(argc, argv);
 
 	pioneer::SFPlayer player;
-	player.Init("test.mov");
+	//player.Init("test.mov");
+	player.Init("california.mkv");
 	
 	getchar();
 	return 0;

@@ -82,17 +82,18 @@ namespace pioneer
 		AVCodecContext* _pVideoCodecCtx;
 		PtrQueue _videoPackets;
 		PtrQueue _audioPackets;
+		PtrQueue _videoFrames;
+		PtrQueue _audioFrames;
 
 		static int VideoThread(void* param)
 		{
 			SFPlayerImpl* impl = (SFPlayerImpl*)param;
-
+			AVFrame* frame = NULL;
 			while (impl->_looping)
 			{
 				AVPacket* packet = (AVPacket*)impl->_videoPackets.Dequeue();
 				if (packet == NULL)
 					continue;
-
 				if (avcodec_send_packet(impl->_pVideoCodecCtx, packet) != 0)
 				{
 					av_packet_unref(packet);
@@ -102,47 +103,41 @@ namespace pioneer
 					impl->_looping = false;
 					break;
 				}
-
-				AVFrame* frame = av_frame_alloc();
-				if (frame == NULL)
+				av_packet_unref(packet);
+				av_packet_free(&packet);
+				packet = NULL;
+				while (true)
 				{
-					av_packet_unref(packet);
-					av_packet_free(&packet);
-					packet = NULL;
-					impl->_errorCode = -22;
-					impl->_looping = false;
-					break;
-				}
-				int ret = 0;
-				while (ret >= 0)
-				{
-					ret = avcodec_receive_frame(impl->_pVideoCodecCtx, frame);
-					if (ret == AVERROR(EAGAIN) || ret == AVERROR_EOF)
+					if (frame == NULL)
 					{
-						av_frame_free(&frame);
-						av_free(frame);
-						frame = NULL;
+						frame = av_frame_alloc();
+						if (frame == NULL)
+						{
+							impl->_errorCode = -22;
+							impl->_looping = false;
+							break;
+						}
+					}
+					int ret = avcodec_receive_frame(impl->_pVideoCodecCtx, frame);
+					if (ret < 0)
+					{
+						if (ret != AVERROR(EAGAIN) && ret != AVERROR_EOF)
+						{
+							impl->_errorCode = -23;
+							impl->_looping = false;
+						}
 						break;
 					}
-					else if (ret < 0)
-					{
-						av_frame_free(&frame);
-						av_free(frame);
-						frame = NULL;
-						av_packet_unref(packet);
-						av_packet_free(&packet);
-						packet = NULL;
-						impl->_errorCode = -22;
-						impl->_looping = false;
-						break;
-					}
-					else
-					{
-						//
-					}
+					impl->_videoFrames.Enqueue(frame);
+					frame = NULL;
 				}
 			}
-			
+			if (frame != NULL)
+			{
+				av_frame_free(&frame);
+				av_free(frame);
+				frame = NULL;
+			}
 
 			/*
 			SFPlayerImpl* impl = (SFPlayerImpl*)param;
@@ -177,24 +172,6 @@ namespace pioneer
 		static int MainThread(void* param)
 		{
 			SFPlayerImpl* impl = (SFPlayerImpl*)param;
-			if (SDL_Init(SDL_INIT_AUDIO | SDL_INIT_VIDEO | SDL_INIT_TIMER) != 0)
-			{
-				impl->_errorCode = -1;
-				goto end;
-			}
-			impl->_window = SDL_CreateWindow("MainWindow", 100, 100, 400, 400, SDL_WINDOW_SHOWN);
-			if (impl->_window == NULL)
-			{
-				impl->_errorCode = -2;
-				goto end;
-			}
-			impl->_renderer = SDL_CreateRenderer(impl->_window, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
-			if (impl->_renderer == NULL)
-			{
-				impl->_errorCode = -3;
-				goto end;
-			}
-
 
 			if (avformat_open_input(&impl->_pFormatCtx, impl->_filename.c_str(), NULL, NULL) != 0)
 			{
@@ -235,9 +212,45 @@ namespace pioneer
 				impl->_errorCode = -9;
 				goto end;
 			}
-
-
-
+			int videoWidth = impl->_pVideoCodecCtx->width;
+			int videoHeight = impl->_pVideoCodecCtx->height;
+			
+			int windowWidth = videoWidth / 2;
+			int windowHeight = videoHeight / 2;
+			if (SDL_Init(SDL_INIT_AUDIO | SDL_INIT_VIDEO | SDL_INIT_TIMER) != 0)
+			{
+				impl->_errorCode = -1;
+				goto end;
+			}
+			impl->_window = SDL_CreateWindow("MainWindow", 100, 100, windowWidth, windowHeight, SDL_WINDOW_SHOWN);
+			if (impl->_window == NULL)
+			{
+				impl->_errorCode = -2;
+				goto end;
+			}
+			impl->_renderer = SDL_CreateRenderer(impl->_window, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
+			if (impl->_renderer == NULL)
+			{
+				impl->_errorCode = -3;
+				goto end;
+			}
+			SDL_Texture* texture = SDL_CreateTexture(impl->_renderer, SDL_PIXELFORMAT_IYUV, SDL_TEXTUREACCESS_STREAMING, videoWidth, videoHeight);
+			if (texture == NULL)
+			{
+				impl->_errorCode = -10;
+				goto end;
+			}
+			SDL_Rect frameRect;
+			frameRect.x = 0;
+			frameRect.y = 0;
+			frameRect.w = videoWidth;
+			frameRect.h = videoHeight;
+			SDL_Rect screenRect;
+			screenRect.x = 0;
+			screenRect.y = 0;
+			screenRect.w = windowWidth;
+			screenRect.h = windowHeight;
+			
 			SDL_Thread* thread = SDL_CreateThread(VideoThread, "VideoThread", impl);
 			if (thread == NULL)
 			{
@@ -258,6 +271,25 @@ namespace pioneer
 						break;
 					};
 				}
+				else if (impl->_videoFrames.Size() > 0)
+				{
+					AVFrame* frame = (AVFrame*)impl->_videoFrames.Dequeue();
+					if (frame != NULL)
+					{
+						if (SDL_UpdateYUVTexture(texture, &frameRect,
+							frame->data[0], frame->linesize[0],
+							frame->data[1], frame->linesize[1],
+							frame->data[2], frame->linesize[2]) != 0)
+						{
+							impl->_errorCode = -11;
+							goto end;
+						}
+
+						SDL_RenderCopy(impl->_renderer, texture, &frameRect, &screenRect);
+						SDL_RenderPresent(impl->_renderer);
+						SDL_Delay(20);
+					}
+				}
 				else if (impl->_videoPackets.Size() < 50 && impl->_audioPackets.Size() < 50)
 				{
 					AVPacket* packet = av_packet_alloc();
@@ -277,7 +309,7 @@ namespace pioneer
 					}
 					else if (packet->stream_index == impl->_audioStreamIndex)
 					{
-						impl->_audioPackets.Enqueue(packet);
+						//impl->_audioPackets.Enqueue(packet);
 					}
 					else
 					{
@@ -302,6 +334,11 @@ namespace pioneer
 			{
 				av_packet_unref(packet);
 				av_packet_free(&packet);
+			}
+			if (texture != NULL)
+			{
+				SDL_DestroyTexture(texture);
+				texture = NULL;
 			}
 			if (impl->_pVideoCodecCtx != NULL)
 			{
