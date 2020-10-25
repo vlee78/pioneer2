@@ -41,6 +41,16 @@ namespace pioneer
 			return size;
 		}
 
+		void* PeekFront()
+		{
+			SDL_LockMutex(_mutex);
+			void* ptr = NULL;
+			if (_list.size() > 0)
+				ptr = _list.front();
+			SDL_UnlockMutex(_mutex);
+			return ptr;
+		}
+
 		void* Dequeue()
 		{
 			SDL_LockMutex(_mutex);
@@ -80,11 +90,170 @@ namespace pioneer
 		int _videoStreamIndex;
 		int _audioStreamIndex;
 		AVCodecContext* _pVideoCodecCtx;
+		AVCodecContext* _pAudioCodecCtx;
 		PtrQueue _videoPackets;
 		PtrQueue _audioPackets;
 		PtrQueue _videoFrames;
 		PtrQueue _audioFrames;
+		AVSampleFormat _audioSampleFormat;
+		int _audioSampleRate;
+		int _audioChannels;
 
+		static void AudioDevice(void* userdata, Uint8* stream, int len)
+		{
+			SFPlayerImpl* impl = (SFPlayerImpl*)userdata;
+			short* buffer0 = ((short*)stream) + 0;
+			short* buffer1 = ((short*)stream) + 1;
+			int bufchs = 2;
+			int bufoff = 0;
+			int bufmax = len / sizeof(short);
+			while(true)
+			{
+				AVFrame* frame = (AVFrame*)impl->_audioFrames.PeekFront();
+				if (frame == NULL) 
+					break;
+				AVSampleFormat format = (AVSampleFormat)frame->format;
+				int sampleRate = frame->sample_rate;
+				int channels = frame->channels;
+				int frameoff = frame->width;
+				if (sampleRate != impl->_audioSampleRate)
+				{
+					impl->_errorCode = -201;
+					impl->_looping = false;
+					return;
+				}
+				if (format == AV_SAMPLE_FMT_FLTP)
+				{
+					int framemax = frame->nb_samples;
+					if (channels == 6)
+					{
+						float* buf0 = (float*)frame->data[0];
+						float* buf1 = (float*)frame->data[1];
+						float* buf2 = (float*)frame->data[2];
+						float* buf3 = (float*)frame->data[3];
+						float* buf4 = (float*)frame->data[4];
+						float* buf5 = (float*)frame->data[5];
+						for (; frameoff < framemax && bufoff < bufmax; frameoff++, bufoff += bufchs)
+						{
+							float val0 = buf0[frameoff] + buf2[frameoff] + buf4[frameoff];
+							float val1 = buf1[frameoff] + buf2[frameoff] + buf5[frameoff];
+							int check0 = (int)(val0 * 32768.0f);
+							int check1 = (int)(val1 * 32768.0f);
+							printf("[6][v:%d, a:%d]: %d,%d\n", impl->_videoFrames.Size(), impl->_audioFrames.Size(), check0, check1);
+							check0 = (check0 < -32768 ? -32768 : (check0 > 32767 ? 32767 : check0));
+							check1 = (check1 < -32768 ? -32768 : (check1 > 32767 ? 32767 : check1));
+							buffer0[bufoff] = (short)check0;
+							buffer1[bufoff] = (short)check1;
+						}
+					}
+					else if (channels == 2)
+					{
+						float* buf0 = (float*)frame->data[0];
+						float* buf1 = (float*)frame->data[1];
+						for (; frameoff < framemax && bufoff < bufmax; frameoff++, bufoff += bufchs)
+						{
+							float val0 = buf0[frameoff];
+							float val1 = buf1[frameoff];
+							int check0 = (int)(val0 * 32768.0f);
+							int check1 = (int)(val1 * 32768.0f);
+							printf("[2][v:%d, a:%d]: %d,%d\n", impl->_videoFrames.Size(), impl->_audioFrames.Size(), check0, check1);
+							check0 = (check0 < -32768 ? -32768 : (check0 > 32767 ? 32767 : check0));
+							check1 = (check1 < -32768 ? -32768 : (check1 > 32767 ? 32767 : check1));
+							buffer0[bufoff] = (short)check0;
+							buffer1[bufoff] = (short)check1;
+						}
+					}
+					else
+					{
+						impl->_errorCode = -202;
+						impl->_looping = false;
+						return;
+					}
+					frame->width = frameoff;
+					if (frameoff >= framemax)
+					{
+						frame = (AVFrame*)impl->_audioFrames.Dequeue();
+						av_frame_unref(frame);
+						av_frame_free(&frame);
+						frame = NULL;
+					}
+					if (bufoff >= bufmax)
+					{
+						break;
+					}
+				}
+				else
+				{
+					impl->_errorCode = -203;
+					impl->_looping = false;
+					return;
+				}
+			}
+
+			/*
+			short* buffer = (short*)stream;
+			int buflen = len / sizeof(short);
+			static FILE* ff = NULL;
+			if (ff == NULL)
+				ff = fopen("mojito.pcm", "rb");
+			int res = fread(buffer, sizeof(short), buflen, ff);
+			*/
+		}
+
+		static int AudioThread(void* param)
+		{
+			SFPlayerImpl* impl = (SFPlayerImpl*)param;
+			AVFrame* frame = NULL;
+			while (impl->_looping)
+			{
+				AVPacket* packet = (AVPacket*)impl->_audioPackets.Dequeue();
+				if (packet == NULL)
+					continue;
+				int ret = avcodec_send_packet(impl->_pAudioCodecCtx, packet);
+				av_packet_unref(packet);
+				av_packet_free(&packet);
+				packet = NULL;
+				if (ret != 0)
+				{
+					impl->_errorCode = -21;
+					impl->_looping = false;
+					break;
+				}
+				while (true)
+				{
+					if (frame == NULL)
+					{
+						frame = av_frame_alloc();
+						if (frame == NULL)
+						{
+							impl->_errorCode = -22;
+							impl->_looping = false;
+							break;
+						}
+					}
+					ret = avcodec_receive_frame(impl->_pAudioCodecCtx, frame);
+					if (ret < 0)
+					{
+						if (ret != AVERROR(EAGAIN) && ret != AVERROR_EOF)
+						{
+							impl->_errorCode = -23;
+							impl->_looping = false;
+						}
+						break;
+					}
+					impl->_audioFrames.Enqueue(frame);
+					frame = NULL;
+				}
+			}
+			if (frame != NULL)
+			{
+				av_frame_free(&frame);
+				av_free(frame);
+				frame = NULL;
+			}
+			return 0;
+		}
+		
 		static int VideoThread(void* param)
 		{
 			SFPlayerImpl* impl = (SFPlayerImpl*)param;
@@ -94,18 +263,16 @@ namespace pioneer
 				AVPacket* packet = (AVPacket*)impl->_videoPackets.Dequeue();
 				if (packet == NULL)
 					continue;
-				if (avcodec_send_packet(impl->_pVideoCodecCtx, packet) != 0)
+				int ret = avcodec_send_packet(impl->_pVideoCodecCtx, packet);
+				av_packet_unref(packet);
+				av_packet_free(&packet);
+				packet = NULL;
+				if (ret != 0)
 				{
-					av_packet_unref(packet);
-					av_packet_free(&packet);
-					packet = NULL;
 					impl->_errorCode = -21;
 					impl->_looping = false;
 					break;
 				}
-				av_packet_unref(packet);
-				av_packet_free(&packet);
-				packet = NULL;
 				while (true)
 				{
 					if (frame == NULL)
@@ -138,34 +305,6 @@ namespace pioneer
 				av_free(frame);
 				frame = NULL;
 			}
-
-			/*
-			SFPlayerImpl* impl = (SFPlayerImpl*)param;
-
-
-			AVPacket* pVideoPacket = av_packet_alloc();
-			AVFrame* pVideoFrame = av_frame_alloc();
-
-			while (true)
-			{
-				avcodec_send_packet(impl->_pVideoCodecCtx)
-			}
-
-
-			
-			SDL_Surface* surface = SDL_LoadBMP("Penguins.bmp");
-			SDL_Texture* texture = SDL_CreateTextureFromSurface(impl->_renderer, surface);
-			SDL_FreeSurface(surface);
-			surface = NULL;
-			while (impl->_looping)
-			{
-				SDL_RenderClear(impl->_renderer);
-				SDL_RenderCopy(impl->_renderer, texture, NULL, NULL);
-				SDL_RenderPresent(impl->_renderer);
-			}
-			SDL_DestroyTexture(texture);
-			texture = NULL;
-			*/
 			return 0;
 		}
 
@@ -214,7 +353,6 @@ namespace pioneer
 			}
 			int videoWidth = impl->_pVideoCodecCtx->width;
 			int videoHeight = impl->_pVideoCodecCtx->height;
-			
 			int windowWidth = videoWidth / 2;
 			int windowHeight = videoHeight / 2;
 			if (SDL_Init(SDL_INIT_AUDIO | SDL_INIT_VIDEO | SDL_INIT_TIMER) != 0)
@@ -240,24 +378,57 @@ namespace pioneer
 				impl->_errorCode = -10;
 				goto end;
 			}
-			SDL_Rect frameRect;
-			frameRect.x = 0;
-			frameRect.y = 0;
-			frameRect.w = videoWidth;
-			frameRect.h = videoHeight;
-			SDL_Rect screenRect;
-			screenRect.x = 0;
-			screenRect.y = 0;
-			screenRect.w = windowWidth;
-			screenRect.h = windowHeight;
+			SDL_Rect frameRect = { 0, 0, videoWidth, videoHeight };
+			SDL_Rect screenRect = { 0, 0, windowWidth, windowHeight };
 			
-			SDL_Thread* thread = SDL_CreateThread(VideoThread, "VideoThread", impl);
-			if (thread == NULL)
+			AVCodec* pAudioCodec = avcodec_find_decoder(impl->_pFormatCtx->streams[impl->_audioStreamIndex]->codecpar->codec_id);
+			if (pAudioCodec == NULL)
+			{
+				impl->_errorCode = -11;
+				goto end;
+			}
+			impl->_pAudioCodecCtx = avcodec_alloc_context3(pAudioCodec);
+			if (avcodec_parameters_to_context(impl->_pAudioCodecCtx, impl->_pFormatCtx->streams[impl->_audioStreamIndex]->codecpar) != 0)
+			{
+				impl->_errorCode = -8;
+				goto end;
+			}
+			if (avcodec_open2(impl->_pAudioCodecCtx, pAudioCodec, NULL) != 0)
+			{
+				impl->_errorCode = -9;
+				goto end;
+			}
+			impl->_audioSampleFormat = impl->_pAudioCodecCtx->sample_fmt;
+			impl->_audioSampleRate = impl->_pAudioCodecCtx->sample_rate;
+			impl->_audioChannels = impl->_pAudioCodecCtx->channels;
+			
+			SDL_AudioSpec want;
+			SDL_zero(want);
+			want.freq = impl->_audioSampleRate;
+			want.format = AUDIO_S16SYS;
+			want.channels = 2;
+			want.samples = 1024;
+			want.callback = AudioDevice;
+			want.userdata = impl;
+			SDL_AudioSpec real;
+			SDL_zero(real);
+			SDL_AudioDeviceID audioDeviceID = SDL_OpenAudioDevice(NULL, 0, &want, &real, 0);
+			SDL_PauseAudioDevice(audioDeviceID, 0);
+
+			SDL_Thread* videoThread = SDL_CreateThread(VideoThread, "VideoThread", impl);
+			if (videoThread == NULL)
 			{
 				impl->_errorCode = -10;
 				goto end;
 			}
-			impl->_threads.push_back(thread);
+			impl->_threads.push_back(videoThread);
+			SDL_Thread* audioThread = SDL_CreateThread(AudioThread, "AudioThread", impl);
+			if (audioThread == NULL)
+			{
+				impl->_errorCode = -11;
+				goto end;
+			}
+			impl->_threads.push_back(audioThread);
 
 			while (impl->_looping)
 			{
@@ -309,7 +480,7 @@ namespace pioneer
 					}
 					else if (packet->stream_index == impl->_audioStreamIndex)
 					{
-						//impl->_audioPackets.Enqueue(packet);
+						impl->_audioPackets.Enqueue(packet);
 					}
 					else
 					{
@@ -334,6 +505,12 @@ namespace pioneer
 			{
 				av_packet_unref(packet);
 				av_packet_free(&packet);
+			}
+
+			if (impl->_pAudioCodecCtx != NULL)
+			{
+				avcodec_close(impl->_pAudioCodecCtx);
+				impl->_pAudioCodecCtx = NULL;
 			}
 			if (texture != NULL)
 			{
@@ -393,7 +570,11 @@ namespace pioneer
 		_impl->_videoStreamIndex = -1;
 		_impl->_audioStreamIndex = -1;
 		_impl->_pVideoCodecCtx = NULL;
-		
+		_impl->_pAudioCodecCtx = NULL;
+		_impl->_audioSampleFormat = (AVSampleFormat)0;
+		_impl->_audioSampleRate = 0;
+		_impl->_audioChannels = 0;
+
 		_impl->_mainthread = SDL_CreateThread(SFPlayerImpl::MainThread, "SFPlayer::MainThread", _impl);
 		if (_impl->_mainthread == NULL)
 		{
