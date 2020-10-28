@@ -127,7 +127,7 @@ namespace pioneer
 		}
 
 		FILE* outfile = fopen(outfilename, "wb");
-		if (outfile = NULL) 
+		if (outfile == NULL) 
 		{
 			fclose(f);
 			avcodec_free_context(&context);
@@ -204,8 +204,8 @@ namespace pioneer
 	{
 		av_register_all();
 
-		const char* infile_name =  "california.mkv";// "mojito.mp3";
-		const char* outfile_name = "california.pcm";// "mojito.pcm";
+		const char* infile_name = "nevada.mkv";// "mojito.mp3"; //"california.mkv";
+		const char* outfile_name = "nevada.pcm";// "mojito.pcm";// "california.pcm";// ;
 		FILE* outfile = fopen(outfile_name, "wb");
 		if (outfile == NULL)
 		{
@@ -1773,12 +1773,12 @@ namespace pioneer
 	int Pioneer::testPioneer(int argc, const char* argv[])
 	{
 		//return testMediaInfo(argc, argv);
-		//return testDecodeMp2(argc, argv);
+		return testDecodeMp2(argc, argv);
 		//return testDecodeAudio(argc, argv);
 		//return testDecodeVideo(argc, argv);
 		//return testDecodeVideo2(argc, argv);
 		//return testDecodeVideo3(argc, argv);
 		//return testAudioDevice(argc, argv);
-		return testAudioDecode(argc, argv);
+		//return testAudioDecode(argc, argv);
 	}
 }

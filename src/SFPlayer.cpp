@@ -82,6 +82,7 @@ namespace pioneer
 		SDL_Thread* _mainthread;
 		SDL_Window* _window;
 		SDL_Renderer* _renderer;
+		SDL_Texture* _texture;
 		bool _looping;
 		long long _errorCode;
 		std::vector<SDL_Thread*> _threads;
@@ -101,6 +102,14 @@ namespace pioneer
 
 		static void AudioDevice(void* userdata, Uint8* stream, int len)
 		{
+			/*
+			static FILE* file = NULL;
+			if (file == NULL)
+				file = fopen("mojito.pcm", "rb");
+			fread(stream, len, 1, file);
+			if (true)
+				return;
+			*/
 			SFPlayerImpl* impl = (SFPlayerImpl*)userdata;
 			short* buffer0 = ((short*)stream) + 0;
 			short* buffer1 = ((short*)stream) + 1;
@@ -308,20 +317,15 @@ namespace pioneer
 			return 0;
 		}
 
+#define ERROR_END(code) {impl->_errorCode = code; goto end;}
+
 		static int MainThread(void* param)
 		{
 			SFPlayerImpl* impl = (SFPlayerImpl*)param;
-
 			if (avformat_open_input(&impl->_pFormatCtx, impl->_filename.c_str(), NULL, NULL) != 0)
-			{
-				impl->_errorCode = -4;
-				goto end;
-			}
+				ERROR_END(-4);
 			if (avformat_find_stream_info(impl->_pFormatCtx, NULL) < 0)
-			{
-				impl->_errorCode = -5;
-				goto end;
-			}
+				ERROR_END(-5);
 			for (int i = 0; i < (int)impl->_pFormatCtx->nb_streams; i++)
 			{
 				if (impl->_videoStreamIndex == -1 && impl->_pFormatCtx->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_VIDEO)
@@ -329,107 +333,70 @@ namespace pioneer
 				if (impl->_audioStreamIndex == -1 && impl->_pFormatCtx->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_AUDIO)
 					impl->_audioStreamIndex = i;
 			}
-			if (impl->_videoStreamIndex == -1 || impl->_audioStreamIndex == -1)
+			if (impl->_videoStreamIndex == -1 && impl->_audioStreamIndex == -1)
+				ERROR_END(-6);
+			if (impl->_videoStreamIndex >= 0)
 			{
-				impl->_errorCode = -6;
-				goto end;
+				AVCodec* pVideoCodec = avcodec_find_decoder(impl->_pFormatCtx->streams[impl->_videoStreamIndex]->codecpar->codec_id);
+				if (pVideoCodec == NULL)
+					ERROR_END(-7);
+				impl->_pVideoCodecCtx = avcodec_alloc_context3(pVideoCodec);
+				if (avcodec_parameters_to_context(impl->_pVideoCodecCtx, impl->_pFormatCtx->streams[impl->_videoStreamIndex]->codecpar) != 0)
+					ERROR_END(-8);
+				if (avcodec_open2(impl->_pVideoCodecCtx, pVideoCodec, NULL) != 0)
+					ERROR_END(-9);
+				int width = impl->_pVideoCodecCtx->width;
+				int height = impl->_pVideoCodecCtx->height;
+				if (SDL_Init(SDL_INIT_AUDIO | SDL_INIT_VIDEO | SDL_INIT_TIMER) != 0)
+					ERROR_END(-1);
+				impl->_window = SDL_CreateWindow("MainWindow", 100, 100, width/2, height/2, SDL_WINDOW_SHOWN);
+				if (impl->_window == NULL)
+					ERROR_END(-2);
+				impl->_renderer = SDL_CreateRenderer(impl->_window, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
+				if (impl->_renderer == NULL)
+					ERROR_END(-3);
+				impl->_texture = SDL_CreateTexture(impl->_renderer, SDL_PIXELFORMAT_IYUV, SDL_TEXTUREACCESS_STREAMING, width, height);
+				if (impl->_texture == NULL)
+					ERROR_END(-4);
+				SDL_Thread* videoThread = SDL_CreateThread(VideoThread, "VideoThread", impl);
+				if (videoThread == NULL)
+				{
+					impl->_errorCode = -10;
+					goto end;
+				}
+				impl->_threads.push_back(videoThread);
 			}
-			AVCodec* pVideoCodec = avcodec_find_decoder(impl->_pFormatCtx->streams[impl->_videoStreamIndex]->codecpar->codec_id);
-			if (pVideoCodec == NULL)
+			if (impl->_audioStreamIndex >= 0)
 			{
-				impl->_errorCode = -7;
-				goto end;
+				AVCodec* pAudioCodec = avcodec_find_decoder(impl->_pFormatCtx->streams[impl->_audioStreamIndex]->codecpar->codec_id);
+				if (pAudioCodec == NULL) 
+					ERROR_END(-11);
+				impl->_pAudioCodecCtx = avcodec_alloc_context3(pAudioCodec);
+				if (avcodec_parameters_to_context(impl->_pAudioCodecCtx, impl->_pFormatCtx->streams[impl->_audioStreamIndex]->codecpar) != 0)
+					ERROR_END(-8);
+				if (avcodec_open2(impl->_pAudioCodecCtx, pAudioCodec, NULL) != 0)
+					ERROR_END(-9);
+				impl->_audioSampleFormat = impl->_pAudioCodecCtx->sample_fmt;
+				impl->_audioSampleRate = impl->_pAudioCodecCtx->sample_rate;
+				impl->_audioChannels = impl->_pAudioCodecCtx->channels;
+				SDL_AudioSpec want;
+				SDL_zero(want);
+				want.freq = impl->_audioSampleRate;
+				want.format = AUDIO_S16SYS;
+				want.channels = 2;
+				want.samples = 1024;
+				want.callback = AudioDevice;
+				want.userdata = impl;
+				SDL_AudioSpec real;
+				SDL_zero(real);
+				SDL_AudioDeviceID audioDeviceID = SDL_OpenAudioDevice(NULL, 0, &want, &real, 0);
+				SDL_PauseAudioDevice(audioDeviceID, 0);
+				SDL_Thread* audioThread = SDL_CreateThread(AudioThread, "AudioThread", impl);
+				if (audioThread == NULL)
+					ERROR_END(-11);
+				impl->_threads.push_back(audioThread);
 			}
-			impl->_pVideoCodecCtx = avcodec_alloc_context3(pVideoCodec);
-			if (avcodec_parameters_to_context(impl->_pVideoCodecCtx, impl->_pFormatCtx->streams[impl->_videoStreamIndex]->codecpar) != 0)
-			{
-				impl->_errorCode = -8;
-				goto end;
-			}
-			if (avcodec_open2(impl->_pVideoCodecCtx, pVideoCodec, NULL) != 0)
-			{
-				impl->_errorCode = -9;
-				goto end;
-			}
-			int videoWidth = impl->_pVideoCodecCtx->width;
-			int videoHeight = impl->_pVideoCodecCtx->height;
-			int windowWidth = videoWidth / 2;
-			int windowHeight = videoHeight / 2;
-			if (SDL_Init(SDL_INIT_AUDIO | SDL_INIT_VIDEO | SDL_INIT_TIMER) != 0)
-			{
-				impl->_errorCode = -1;
-				goto end;
-			}
-			impl->_window = SDL_CreateWindow("MainWindow", 100, 100, windowWidth, windowHeight, SDL_WINDOW_SHOWN);
-			if (impl->_window == NULL)
-			{
-				impl->_errorCode = -2;
-				goto end;
-			}
-			impl->_renderer = SDL_CreateRenderer(impl->_window, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
-			if (impl->_renderer == NULL)
-			{
-				impl->_errorCode = -3;
-				goto end;
-			}
-			SDL_Texture* texture = SDL_CreateTexture(impl->_renderer, SDL_PIXELFORMAT_IYUV, SDL_TEXTUREACCESS_STREAMING, videoWidth, videoHeight);
-			if (texture == NULL)
-			{
-				impl->_errorCode = -10;
-				goto end;
-			}
-			SDL_Rect frameRect = { 0, 0, videoWidth, videoHeight };
-			SDL_Rect screenRect = { 0, 0, windowWidth, windowHeight };
 			
-			AVCodec* pAudioCodec = avcodec_find_decoder(impl->_pFormatCtx->streams[impl->_audioStreamIndex]->codecpar->codec_id);
-			if (pAudioCodec == NULL)
-			{
-				impl->_errorCode = -11;
-				goto end;
-			}
-			impl->_pAudioCodecCtx = avcodec_alloc_context3(pAudioCodec);
-			if (avcodec_parameters_to_context(impl->_pAudioCodecCtx, impl->_pFormatCtx->streams[impl->_audioStreamIndex]->codecpar) != 0)
-			{
-				impl->_errorCode = -8;
-				goto end;
-			}
-			if (avcodec_open2(impl->_pAudioCodecCtx, pAudioCodec, NULL) != 0)
-			{
-				impl->_errorCode = -9;
-				goto end;
-			}
-			impl->_audioSampleFormat = impl->_pAudioCodecCtx->sample_fmt;
-			impl->_audioSampleRate = impl->_pAudioCodecCtx->sample_rate;
-			impl->_audioChannels = impl->_pAudioCodecCtx->channels;
-			
-			SDL_AudioSpec want;
-			SDL_zero(want);
-			want.freq = impl->_audioSampleRate;
-			want.format = AUDIO_S16SYS;
-			want.channels = 2;
-			want.samples = 1024;
-			want.callback = AudioDevice;
-			want.userdata = impl;
-			SDL_AudioSpec real;
-			SDL_zero(real);
-			SDL_AudioDeviceID audioDeviceID = SDL_OpenAudioDevice(NULL, 0, &want, &real, 0);
-			SDL_PauseAudioDevice(audioDeviceID, 0);
-
-			SDL_Thread* videoThread = SDL_CreateThread(VideoThread, "VideoThread", impl);
-			if (videoThread == NULL)
-			{
-				impl->_errorCode = -10;
-				goto end;
-			}
-			impl->_threads.push_back(videoThread);
-			SDL_Thread* audioThread = SDL_CreateThread(AudioThread, "AudioThread", impl);
-			if (audioThread == NULL)
-			{
-				impl->_errorCode = -11;
-				goto end;
-			}
-			impl->_threads.push_back(audioThread);
-
 			while (impl->_looping)
 			{
 				SDL_Event event;
@@ -442,12 +409,12 @@ namespace pioneer
 						break;
 					};
 				}
-				else if (impl->_videoFrames.Size() > 0)
+				else if (impl->_videoStreamIndex >= 0 && impl->_videoFrames.Size() > 0)
 				{
 					AVFrame* frame = (AVFrame*)impl->_videoFrames.Dequeue();
 					if (frame != NULL)
 					{
-						if (SDL_UpdateYUVTexture(texture, &frameRect,
+						if (SDL_UpdateYUVTexture(impl->_texture, NULL,
 							frame->data[0], frame->linesize[0],
 							frame->data[1], frame->linesize[1],
 							frame->data[2], frame->linesize[2]) != 0)
@@ -455,10 +422,12 @@ namespace pioneer
 							impl->_errorCode = -11;
 							goto end;
 						}
-
-						SDL_RenderCopy(impl->_renderer, texture, &frameRect, &screenRect);
+						SDL_RenderCopy(impl->_renderer, impl->_texture, NULL, NULL);
 						SDL_RenderPresent(impl->_renderer);
 						SDL_Delay(20);
+						av_frame_unref(frame);
+						av_frame_free(&frame);
+						frame = NULL;
 					}
 				}
 				else if (impl->_videoPackets.Size() < 50 && impl->_audioPackets.Size() < 50)
@@ -506,16 +475,10 @@ namespace pioneer
 				av_packet_unref(packet);
 				av_packet_free(&packet);
 			}
-
 			if (impl->_pAudioCodecCtx != NULL)
 			{
 				avcodec_close(impl->_pAudioCodecCtx);
 				impl->_pAudioCodecCtx = NULL;
-			}
-			if (texture != NULL)
-			{
-				SDL_DestroyTexture(texture);
-				texture = NULL;
 			}
 			if (impl->_pVideoCodecCtx != NULL)
 			{
@@ -528,6 +491,11 @@ namespace pioneer
 			{
 				avformat_close_input(&impl->_pFormatCtx);
 				impl->_pFormatCtx = NULL;
+			}
+			if (impl->_texture != NULL)
+			{
+				SDL_DestroyTexture(impl->_texture);
+				impl->_texture = NULL;
 			}
 			if (impl->_renderer != NULL)
 			{
@@ -564,6 +532,7 @@ namespace pioneer
 		_impl->_mainthread = NULL;
 		_impl->_window = NULL;
 		_impl->_renderer = NULL;
+		_impl->_texture = NULL;
 		_impl->_looping = true;
 		_impl->_errorCode = 0;
 		_impl->_pFormatCtx = NULL;
