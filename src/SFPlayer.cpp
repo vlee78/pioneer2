@@ -199,14 +199,14 @@ namespace pioneer
 				}
 			}
 
-			/*
+
 			short* buffer = (short*)stream;
 			int buflen = len / sizeof(short);
 			static FILE* ff = NULL;
 			if (ff == NULL)
-				ff = fopen("mojito.pcm", "rb");
-			int res = fread(buffer, sizeof(short), buflen, ff);
-			*/
+				ff = fopen("test.pcm", "wb");
+			int res = fwrite(buffer, sizeof(short), buflen / sizeof(short), ff);
+			fflush(ff);
 		}
 
 		static int AudioThread(void* param)
