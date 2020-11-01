@@ -102,14 +102,6 @@ namespace pioneer
 
 		static void AudioDevice(void* userdata, Uint8* stream, int len)
 		{
-			/*
-			static FILE* file = NULL;
-			if (file == NULL)
-				file = fopen("mojito.pcm", "rb");
-			fread(stream, len, 1, file);
-			if (true)
-				return;
-			*/
 			SFPlayerImpl* impl = (SFPlayerImpl*)userdata;
 			short* buffer0 = ((short*)stream) + 0;
 			short* buffer1 = ((short*)stream) + 1;
@@ -124,7 +116,6 @@ namespace pioneer
 				AVSampleFormat format = (AVSampleFormat)frame->format;
 				int sampleRate = frame->sample_rate;
 				int channels = frame->channels;
-				int frameoff = frame->width;
 				if (sampleRate != impl->_audioSampleRate)
 				{
 					impl->_errorCode = -201;
@@ -134,6 +125,7 @@ namespace pioneer
 				if (format == AV_SAMPLE_FMT_FLTP)
 				{
 					int framemax = frame->nb_samples;
+					int frameoff = frame->width;
 					if (channels == 6)
 					{
 						float* buf0 = (float*)frame->data[0];
@@ -144,11 +136,10 @@ namespace pioneer
 						float* buf5 = (float*)frame->data[5];
 						for (; frameoff < framemax && bufoff < bufmax; frameoff++, bufoff += bufchs)
 						{
-							float val0 = buf0[frameoff] + buf2[frameoff] + buf4[frameoff];
-							float val1 = buf1[frameoff] + buf2[frameoff] + buf5[frameoff];
+							float val0 = buf0[frameoff] + buf2[frameoff] + buf3[frameoff] + buf4[frameoff];
+							float val1 = buf1[frameoff] + buf2[frameoff] + buf3[frameoff] + buf5[frameoff];
 							int check0 = (int)(val0 * 32768.0f);
 							int check1 = (int)(val1 * 32768.0f);
-							printf("[6][v:%d, a:%d]: %d,%d\n", impl->_videoFrames.Size(), impl->_audioFrames.Size(), check0, check1);
 							check0 = (check0 < -32768 ? -32768 : (check0 > 32767 ? 32767 : check0));
 							check1 = (check1 < -32768 ? -32768 : (check1 > 32767 ? 32767 : check1));
 							buffer0[bufoff] = (short)check0;
@@ -165,7 +156,6 @@ namespace pioneer
 							float val1 = buf1[frameoff];
 							int check0 = (int)(val0 * 32768.0f);
 							int check1 = (int)(val1 * 32768.0f);
-							printf("[2][v:%d, a:%d]: %d,%d\n", impl->_videoFrames.Size(), impl->_audioFrames.Size(), check0, check1);
 							check0 = (check0 < -32768 ? -32768 : (check0 > 32767 ? 32767 : check0));
 							check1 = (check1 < -32768 ? -32768 : (check1 > 32767 ? 32767 : check1));
 							buffer0[bufoff] = (short)check0;
@@ -198,15 +188,6 @@ namespace pioneer
 					return;
 				}
 			}
-
-
-			short* buffer = (short*)stream;
-			int buflen = len / sizeof(short);
-			static FILE* ff = NULL;
-			if (ff == NULL)
-				ff = fopen("test.pcm", "wb");
-			int res = fwrite(buffer, sizeof(short), buflen / sizeof(short), ff);
-			fflush(ff);
 		}
 
 		static int AudioThread(void* param)
@@ -335,6 +316,8 @@ namespace pioneer
 			}
 			if (impl->_videoStreamIndex == -1 && impl->_audioStreamIndex == -1)
 				ERROR_END(-6);
+			if (SDL_Init(SDL_INIT_AUDIO | SDL_INIT_VIDEO | SDL_INIT_TIMER) != 0)
+				ERROR_END(-1);
 			if (impl->_videoStreamIndex >= 0)
 			{
 				AVCodec* pVideoCodec = avcodec_find_decoder(impl->_pFormatCtx->streams[impl->_videoStreamIndex]->codecpar->codec_id);
@@ -347,8 +330,6 @@ namespace pioneer
 					ERROR_END(-9);
 				int width = impl->_pVideoCodecCtx->width;
 				int height = impl->_pVideoCodecCtx->height;
-				if (SDL_Init(SDL_INIT_AUDIO | SDL_INIT_VIDEO | SDL_INIT_TIMER) != 0)
-					ERROR_END(-1);
 				impl->_window = SDL_CreateWindow("MainWindow", 100, 100, width/2, height/2, SDL_WINDOW_SHOWN);
 				if (impl->_window == NULL)
 					ERROR_END(-2);
@@ -390,6 +371,8 @@ namespace pioneer
 				SDL_AudioSpec real;
 				SDL_zero(real);
 				SDL_AudioDeviceID audioDeviceID = SDL_OpenAudioDevice(NULL, 0, &want, &real, 0);
+				if (audioDeviceID == 0)
+					ERROR_END(-11);
 				SDL_PauseAudioDevice(audioDeviceID, 0);
 				SDL_Thread* audioThread = SDL_CreateThread(AudioThread, "AudioThread", impl);
 				if (audioThread == NULL)
