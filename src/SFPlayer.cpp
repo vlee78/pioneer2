@@ -285,6 +285,20 @@ namespace pioneer
 						}
 						break;
 					}
+					static int ind = 0;
+					printf("[%d] Frame %c (%d) pts:%lld dts:%lld key_frame:%d [coded_picture_number:%d, display_picture_number:%d, %dx%d] timebase=%d/%d\n",
+						ind++,
+						av_get_picture_type_char(frame->pict_type),
+						0,//videoState->video_ctx->frame_number,
+						frame->pts,
+						frame->pkt_dts,
+						frame->key_frame,
+						frame->coded_picture_number,
+						frame->display_picture_number,
+						frame->width,
+						frame->height,
+						impl->_pVideoCodecCtx->time_base.num,
+						impl->_pVideoCodecCtx->time_base.den);
 					impl->_videoFrames.Enqueue(frame);
 					frame = NULL;
 				}

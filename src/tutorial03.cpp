@@ -107,18 +107,6 @@ static int audio_resampling(
  */
 int tutorial03(int argc, char * argv[])
 {
-	if (1)
-	{
-		char* params[] =
-		{
-			"1.exe",
-			"test.mov",
-			"2000"
-		};
-		argc = 3;
-		argv = params;
-	}
-
     // if the given number of command line arguments is wrong,
     if ( !(argc == 3) )
     {

@@ -10,11 +10,36 @@
 #include <chrono>
 #include <vld.h>
 #include "tutorial03.h"
+#include "tutorial07.h"
 
 int main(int argc, char* argv[])
 {
-	printf("hello\n");
-	//tutorial03(argc, argv);
+	/*
+	{
+		char* params[] =
+		{
+			"tutorial03.exe",
+			"test.mov",
+			"2000"
+		};
+		argc = 3;
+		argv = params;
+		tutorial03(argc, argv);
+	}
+	*/
+	/*
+	{
+		char* params[] =
+		{
+			"tutorial07.exe",
+			"test.mov",
+			"2000"
+		};
+		argc = 3;
+		argv = params;
+		tutorial07(argc, argv);
+	}
+	*/
 	//return pioneer::Pioneer::testPioneer(argc, argv);
 	//return pioneer::Pioneer2::testPioneer2(argc, argv);
 	//return pioneer::Pioneer2::testSDL(argc, argv);
