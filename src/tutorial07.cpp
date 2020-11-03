@@ -907,6 +907,8 @@ int stream_component_open(VideoState * videoState, int stream_index)
             printf("SDL_OpenAudio: %s.\n", SDL_GetError());
             return -1;
         }
+
+		SDL_PauseAudioDevice(audioDeviceID, 0);
     }
 
     // initialize the AVCodecContext to use the given AVCodec
@@ -936,7 +938,7 @@ int stream_component_open(VideoState * videoState, int stream_index)
             packet_queue_init(&videoState->audioq);
 
             // start playing audio on the first audio device
-            SDL_PauseAudio(0);
+            //SDL_PauseAudio(0);
         }
             break;
 
