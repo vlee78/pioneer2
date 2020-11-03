@@ -21,6 +21,9 @@
     <ClCompile Include="..\..\..\src\tutorial07.cpp">
       <Filter>src</Filter>
     </ClCompile>
+    <ClCompile Include="..\..\..\src\tutorial05.cpp">
+      <Filter>src</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\..\..\src\Pioneer.h">
@@ -36,6 +39,9 @@
       <Filter>src</Filter>
     </ClInclude>
     <ClInclude Include="..\..\..\src\tutorial07.h">
+      <Filter>src</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\src\tutorial05.h">
       <Filter>src</Filter>
     </ClInclude>
   </ItemGroup>

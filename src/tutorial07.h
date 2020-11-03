@@ -1,2 +1,6 @@
+#pragma once
 
-int tutorial07(int argc, char * argv[]);
+namespace tutorial07
+{
+	int tutorial07(int argc, char * argv[]);
+}

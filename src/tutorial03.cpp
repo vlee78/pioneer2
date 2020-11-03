@@ -34,6 +34,9 @@ extern "C"
 	#include "libavutil/opt.h"
 }
 
+namespace tutorial03
+{
+
 /* Prevents SDL from overriding main() */
 #ifdef __MINGW32__
 #undef main
@@ -209,7 +212,7 @@ int tutorial03(int argc, char * argv[])
     SDL_AudioSpec specs;
 
     // set audio settings from codec info
-	wanted_specs.freq = 44100;// aCodecCtx->sample_rate;
+	wanted_specs.freq = aCodecCtx->sample_rate;
     wanted_specs.format = AUDIO_S16SYS;
     wanted_specs.channels = aCodecCtx->channels;
     wanted_specs.silence = 0;
@@ -727,15 +730,6 @@ static int packet_queue_get(PacketQueue * q, AVPacket * pkt, int block)
  */
 void audio_callback(void * userdata, Uint8 * stream, int len)
 {
-	/*
-	static FILE* file = NULL;
-	if (file == NULL)
-		file = fopen("mojito.pcm", "rb");
-	if (fread(stream, len, 1, file) != 1)
-		return;
-	if (true)
-		return;
-	*/
     // retrieve the audio codec context
     AVCodecContext * aCodecCtx = (AVCodecContext *) userdata;
 
@@ -1298,3 +1292,6 @@ static int audio_resampling(                                  // 1
  *
  * https://github.com/pesintta/vdr-plugin-vaapidevice/issues/32
  */
+
+}
+
