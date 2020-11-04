@@ -27,7 +27,7 @@ int main(int argc, char* argv[])
 		
 	}
 	//tutorial03::tutorial03(argc, argv);
-	tutorial05::tutorial05(argc, argv);
+	//tutorial05::tutorial05(argc, argv);
 	//tutorial07::tutorial07(argc, argv);
 
 	//return pioneer::Pioneer::testPioneer(argc, argv);
@@ -36,7 +36,7 @@ int main(int argc, char* argv[])
 	//return pioneer::Pioneer2::testSDLSample(argc, argv);
 
 	pioneer::SFPlayer player;
-	//player.Init("test.mov");
+	player.Init("test.mov");
 	//player.Init("california.mkv");
 	//player.Init("nevada.mkv");
 	//player.Init("idaho.mkv");

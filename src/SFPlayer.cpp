@@ -286,6 +286,8 @@ namespace pioneer
 						break;
 					}
 					static int ind = 0;
+					AVStream* stream = impl->_pFormatCtx->streams[impl->_videoStreamIndex];
+					AVRational time_base = stream->time_base;
 					printf("[%d] Frame %c (%d) pts:%lld dts:%lld key_frame:%d [coded_picture_number:%d, display_picture_number:%d, %dx%d] timebase=%d/%d\n",
 						ind++,
 						av_get_picture_type_char(frame->pict_type),
@@ -297,8 +299,8 @@ namespace pioneer
 						frame->display_picture_number,
 						frame->width,
 						frame->height,
-						impl->_pVideoCodecCtx->time_base.num,
-						impl->_pVideoCodecCtx->time_base.den);
+						time_base.num,
+						time_base.den);
 					impl->_videoFrames.Enqueue(frame);
 					frame = NULL;
 				}
