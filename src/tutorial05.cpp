@@ -1095,7 +1095,7 @@ int video_thread(void * arg)
                 frameFinished = 1;
             }
 
-            // attempt to guess proper monotonic timestamps for decoded video frames
+            // attempt to pts proper monotonic timestamps for decoded video frames
             pts = (double)guess_correct_pts(videoState->video_ctx, pFrame->pts, pFrame->pkt_dts);   // [1]
 
             // in case we get an undefined timestamp value
