@@ -7,7 +7,7 @@ namespace pioneer
 	public:
 		SFPlayer();
 		~SFPlayer();
-		long long Init(const char* filename);
+		long long Init(const char* filename, bool videoEnabled = true, bool audioEnabled = true);
 		void Uninit();
 
 	private:

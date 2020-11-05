@@ -58,27 +58,45 @@ namespace pioneer
 			if (_list.size() > 0)
 			{
 				ptr = _list.front();
+				double duration = _durations.front();
+				_duration -= duration;
+				if (duration < 0) duration = 0;
 				_list.pop_front();
+				_durations.pop_front();
 			}
 			SDL_UnlockMutex(_mutex);
 			return ptr;
 		}
 
-		void Enqueue(void* ptr)
+		void Enqueue(void* ptr, double duration)
 		{
 			SDL_LockMutex(_mutex);
 			_list.push_back(ptr);
+			_durations.push_back(duration);
+			_duration += duration;
 			SDL_UnlockMutex(_mutex);
+		}
+
+		double GetDuration()
+		{
+			SDL_LockMutex(_mutex);
+			double duration = _duration;
+			SDL_UnlockMutex(_mutex);
+			return duration;
 		}
 
 		SDL_mutex* _mutex;
 		std::list<void*> _list;
+		std::list<double> _durations;
+		double _duration;
 	};
 
 	class SFPlayer::SFPlayerImpl
 	{
 	public:
 		std::string _filename;
+		bool _videoEnabled;
+		bool _audioEnabled;
 		SDL_Thread* _mainthread;
 		SDL_Window* _window;
 		SDL_Renderer* _renderer;
@@ -99,6 +117,11 @@ namespace pioneer
 		AVSampleFormat _audioSampleFormat;
 		int _audioSampleRate;
 		int _audioChannels;
+
+		long long _playSampleOffset;
+		long long _playSampleCount;
+		long long _playSampleRate;
+		double _playTimeGlobal;
 
 		static void AudioDevice(void* userdata, Uint8* stream, int len)
 		{
@@ -188,11 +211,22 @@ namespace pioneer
 					return;
 				}
 			}
+
+
+			impl->_playSampleCount += bufmax / bufchs;
+			impl->_playTimeGlobal = (impl->_playSampleOffset + impl->_playSampleCount) / (double)impl->_playSampleRate;
+			static int ind = 0;
+			printf("Audio[%d]: %lld + %lld, %fs\n", ind++, impl->_playSampleOffset, impl->_playSampleCount, impl->_playTimeGlobal);
 		}
 
 		static int AudioThread(void* param)
 		{
 			SFPlayerImpl* impl = (SFPlayerImpl*)param;
+			impl->_playSampleOffset = 0;
+			impl->_playSampleCount = 0;
+			impl->_playSampleRate = impl->_pAudioCodecCtx->sample_rate;
+			impl->_playTimeGlobal = 0.0;
+
 			AVFrame* frame = NULL;
 			while (impl->_looping)
 			{
@@ -231,7 +265,12 @@ namespace pioneer
 						}
 						break;
 					}
-					impl->_audioFrames.Enqueue(frame);
+					//static int ind = 0;
+					//AVStream* stream = impl->_pFormatCtx->streams[impl->_audioStreamIndex];
+					//AVRational time_base = stream->time_base;
+					//printf("[%d] Audio pts:%lld dts:%lld nb_samples:%d timebase=%d/%d\n", ind++, frame->pts, frame->pkt_dts, frame->nb_samples, time_base.num, time_base.den);
+					double duration = frame->nb_samples / (double)frame->sample_rate;
+					impl->_audioFrames.Enqueue(frame, duration);
 					frame = NULL;
 				}
 			}
@@ -301,7 +340,7 @@ namespace pioneer
 						frame->height,
 						time_base.num,
 						time_base.den);
-					impl->_videoFrames.Enqueue(frame);
+					impl->_videoFrames.Enqueue(frame, 0);
 					frame = NULL;
 				}
 			}
@@ -334,7 +373,7 @@ namespace pioneer
 				ERROR_END(-6);
 			if (SDL_Init(SDL_INIT_AUDIO | SDL_INIT_VIDEO | SDL_INIT_TIMER) != 0)
 				ERROR_END(-1);
-			if (impl->_videoStreamIndex >= 0)
+			if (impl->_videoStreamIndex >= 0 && impl->_videoEnabled)
 			{
 				AVCodec* pVideoCodec = avcodec_find_decoder(impl->_pFormatCtx->streams[impl->_videoStreamIndex]->codecpar->codec_id);
 				if (pVideoCodec == NULL)
@@ -363,7 +402,7 @@ namespace pioneer
 				}
 				impl->_threads.push_back(videoThread);
 			}
-			if (impl->_audioStreamIndex >= 0)
+			if (impl->_audioStreamIndex >= 0 && impl->_audioEnabled)
 			{
 				AVCodec* pAudioCodec = avcodec_find_decoder(impl->_pFormatCtx->streams[impl->_audioStreamIndex]->codecpar->codec_id);
 				if (pAudioCodec == NULL) 
@@ -409,7 +448,7 @@ namespace pioneer
 					};
 				}
 				else if (impl->_videoStreamIndex >= 0 && impl->_videoFrames.Size() > 0)
-				{
+				{//video render
 					AVFrame* frame = (AVFrame*)impl->_videoFrames.Dequeue();
 					if (frame != NULL)
 					{
@@ -429,8 +468,8 @@ namespace pioneer
 						frame = NULL;
 					}
 				}
-				else if (impl->_videoPackets.Size() < 50 && impl->_audioPackets.Size() < 50)
-				{
+				else if ((impl->_videoEnabled && impl->_videoPackets.Size() < 50) || (impl->_audioEnabled && impl->_audioPackets.Size() < 50))
+				{//demux
 					AVPacket* packet = av_packet_alloc();
 					if (packet == NULL)
 					{
@@ -442,13 +481,13 @@ namespace pioneer
 						impl->_errorCode = -12;
 						goto end;
 					}
-					if (packet->stream_index == impl->_videoStreamIndex)
+					if (impl->_videoEnabled && packet->stream_index == impl->_videoStreamIndex)
 					{
-						impl->_videoPackets.Enqueue(packet);
+						impl->_videoPackets.Enqueue(packet, 0);
 					}
-					else if (packet->stream_index == impl->_audioStreamIndex)
+					else if (impl->_audioEnabled && packet->stream_index == impl->_audioStreamIndex)
 					{
-						impl->_audioPackets.Enqueue(packet);
+						impl->_audioPackets.Enqueue(packet, 0);
 					}
 					else
 					{
@@ -521,13 +560,15 @@ namespace pioneer
 		Uninit();
 	}
 
-	long long SFPlayer::Init(const char* filename)
+	long long SFPlayer::Init(const char* filename, bool videoEnabled, bool audioEnabled)
 	{
 		Uninit();
 		_impl = new(std::nothrow) SFPlayerImpl();
 		if (_impl == NULL)
 			return -1;
 		_impl->_filename = filename;
+		_impl->_videoEnabled = videoEnabled;
+		_impl->_audioEnabled = audioEnabled;
 		_impl->_mainthread = NULL;
 		_impl->_window = NULL;
 		_impl->_renderer = NULL;
@@ -542,7 +583,10 @@ namespace pioneer
 		_impl->_audioSampleFormat = (AVSampleFormat)0;
 		_impl->_audioSampleRate = 0;
 		_impl->_audioChannels = 0;
-
+		_impl->_playSampleOffset = 0;
+		_impl->_playSampleCount = 0;
+		_impl->_playSampleRate = 0;
+		_impl->_playTimeGlobal = 0;
 		_impl->_mainthread = SDL_CreateThread(SFPlayerImpl::MainThread, "SFPlayer::MainThread", _impl);
 		if (_impl->_mainthread == NULL)
 		{
