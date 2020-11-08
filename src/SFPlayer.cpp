@@ -340,6 +340,7 @@ namespace pioneer
 						frame->height,
 						time_base.num,
 						time_base.den);
+					frame->pkt_duration
 					impl->_videoFrames.Enqueue(frame, 0);
 					frame = NULL;
 				}
