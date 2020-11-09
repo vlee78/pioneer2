@@ -340,7 +340,7 @@ namespace pioneer
 						frame->height,
 						time_base.num,
 						time_base.den);
-					frame->pkt_duration
+					//frame->pkt_duration
 					impl->_videoFrames.Enqueue(frame, 0);
 					frame = NULL;
 				}
@@ -374,6 +374,8 @@ namespace pioneer
 				ERROR_END(-6);
 			if (SDL_Init(SDL_INIT_AUDIO | SDL_INIT_VIDEO | SDL_INIT_TIMER) != 0)
 				ERROR_END(-1);
+			AVStream* videoStream = NULL;
+			AVStream* audioStream = NULL;
 			if (impl->_videoStreamIndex >= 0 && impl->_videoEnabled)
 			{
 				AVCodec* pVideoCodec = avcodec_find_decoder(impl->_pFormatCtx->streams[impl->_videoStreamIndex]->codecpar->codec_id);
@@ -402,6 +404,7 @@ namespace pioneer
 					goto end;
 				}
 				impl->_threads.push_back(videoThread);
+				videoStream = impl->_pFormatCtx->streams[impl->_videoStreamIndex];
 			}
 			if (impl->_audioStreamIndex >= 0 && impl->_audioEnabled)
 			{
@@ -434,6 +437,7 @@ namespace pioneer
 				if (audioThread == NULL)
 					ERROR_END(-11);
 				impl->_threads.push_back(audioThread);
+				audioStream = impl->_pFormatCtx->streams[impl->_audioStreamIndex];
 			}
 			
 			while (impl->_looping)
@@ -469,7 +473,20 @@ namespace pioneer
 						frame = NULL;
 					}
 				}
-				else if ((impl->_videoEnabled && impl->_videoPackets.Size() < 50) || (impl->_audioEnabled && impl->_audioPackets.Size() < 50))
+				else if (impl->_videoEnabled || impl->_audioEnabled)
+				{
+					double videoDuration = impl->_videoPackets.GetDuration();
+					double audioDuration = impl->_audioPackets.GetDuration();
+					if ((impl->_videoEnabled && impl->_audioEnabled && videoDuration < 2.0 && audioDuration < 2.0) ||
+						(impl->_videoEnabled && impl->_audioEnabled == false )
+						)
+
+
+
+				}
+					if (
+					(impl->_videoEnabled && impl->_audioEnabled && impl->_videoPackets.GetDuration() > 2.0) ||
+					(impl->_audioEnabled && impl->_audioPackets.GetDuration() < 2.0))
 				{//demux
 					AVPacket* packet = av_packet_alloc();
 					if (packet == NULL)
@@ -484,11 +501,13 @@ namespace pioneer
 					}
 					if (impl->_videoEnabled && packet->stream_index == impl->_videoStreamIndex)
 					{
-						impl->_videoPackets.Enqueue(packet, 0);
+						double duration = packet->duration * videoStream->time_base.num / (double)videoStream->time_base.den;
+						impl->_videoPackets.Enqueue(packet, duration);
 					}
 					else if (impl->_audioEnabled && packet->stream_index == impl->_audioStreamIndex)
 					{
-						impl->_audioPackets.Enqueue(packet, 0);
+						double duration = packet->duration * audioStream->time_base.num / (double)audioStream->time_base.den;
+						impl->_audioPackets.Enqueue(packet, duration);
 					}
 					else
 					{
