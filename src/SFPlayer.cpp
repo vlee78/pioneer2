@@ -123,6 +123,9 @@ namespace pioneer
 		long long _playSampleRate;
 		double _playTimeGlobal;
 
+		State _state;
+		double _time;
+
 		static void AudioDevice(void* userdata, Uint8* stream, int len)
 		{
 			SFPlayerImpl* impl = (SFPlayerImpl*)userdata;
@@ -607,6 +610,9 @@ namespace pioneer
 		_impl->_playSampleCount = 0;
 		_impl->_playSampleRate = 0;
 		_impl->_playTimeGlobal = 0;
+
+		_impl->_state = Closed;
+		_impl->_time = 0.0;
 		_impl->_mainthread = SDL_CreateThread(SFPlayerImpl::MainThread, "SFPlayer::MainThread", _impl);
 		if (_impl->_mainthread == NULL)
 		{

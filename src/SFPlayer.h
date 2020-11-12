@@ -7,7 +7,7 @@ namespace pioneer
 	public:
 		enum State
 		{
-			Ready		= 0,
+			Closed		= 0,
 			Paused		= 1,
 			Buffering	= 2,
 			Playing		= 3,
