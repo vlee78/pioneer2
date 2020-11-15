@@ -12,11 +12,18 @@ namespace pioneer
 			Buffering	= 2,
 			Playing		= 3,
 		};
+        
+        enum Flag
+        {
+            Default = 0,
+            NoAudio = 1,
+            NoVideo = 2,
+        };
 
 	public:
 		SFPlayer();
 		~SFPlayer();
-		long long Init(const char* filename, bool videoEnabled = true, bool audioEnabled = true);
+		long long Init(const char* filename, Flag flag = Default);
 		void Uninit();
 
 		State GetState();

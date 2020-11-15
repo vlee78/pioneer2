@@ -1,0 +1,316 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 50;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		BFA47DBC2561140600D70DB2 /* pioneer2.hpp in Headers */ = {isa = PBXBuildFile; fileRef = BFA47DBB2561140600D70DB2 /* pioneer2.hpp */; };
+		BFA47DBE2561140600D70DB2 /* pioneer2Priv.hpp in Headers */ = {isa = PBXBuildFile; fileRef = BFA47DBD2561140600D70DB2 /* pioneer2Priv.hpp */; };
+		BFA47DC02561140600D70DB2 /* pioneer2.cpp in Sources */ = {isa = PBXBuildFile; fileRef = BFA47DBF2561140600D70DB2 /* pioneer2.cpp */; };
+		BFA47DC92561144E00D70DB2 /* SFPlayer.cpp in Sources */ = {isa = PBXBuildFile; fileRef = BFA47DC72561144D00D70DB2 /* SFPlayer.cpp */; };
+		BFA47DCA2561144E00D70DB2 /* SFPlayer.h in Headers */ = {isa = PBXBuildFile; fileRef = BFA47DC82561144D00D70DB2 /* SFPlayer.h */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		BFA47DB82561140600D70DB2 /* libpioneer2.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = libpioneer2.a; sourceTree = BUILT_PRODUCTS_DIR; };
+		BFA47DBB2561140600D70DB2 /* pioneer2.hpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.h; path = pioneer2.hpp; sourceTree = "<group>"; };
+		BFA47DBD2561140600D70DB2 /* pioneer2Priv.hpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.h; path = pioneer2Priv.hpp; sourceTree = "<group>"; };
+		BFA47DBF2561140600D70DB2 /* pioneer2.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = pioneer2.cpp; sourceTree = "<group>"; };
+		BFA47DC72561144D00D70DB2 /* SFPlayer.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = SFPlayer.cpp; path = ../../../../src/SFPlayer.cpp; sourceTree = "<group>"; };
+		BFA47DC82561144D00D70DB2 /* SFPlayer.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = SFPlayer.h; path = ../../../../src/SFPlayer.h; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		BFA47DB62561140600D70DB2 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		BFA47DAF2561140600D70DB2 = {
+			isa = PBXGroup;
+			children = (
+				BFA47DC62561142800D70DB2 /* src */,
+				BFA47DBA2561140600D70DB2 /* pioneer2 */,
+				BFA47DB92561140600D70DB2 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		BFA47DB92561140600D70DB2 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				BFA47DB82561140600D70DB2 /* libpioneer2.a */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		BFA47DBA2561140600D70DB2 /* pioneer2 */ = {
+			isa = PBXGroup;
+			children = (
+				BFA47DBB2561140600D70DB2 /* pioneer2.hpp */,
+				BFA47DBD2561140600D70DB2 /* pioneer2Priv.hpp */,
+				BFA47DBF2561140600D70DB2 /* pioneer2.cpp */,
+			);
+			path = pioneer2;
+			sourceTree = "<group>";
+		};
+		BFA47DC62561142800D70DB2 /* src */ = {
+			isa = PBXGroup;
+			children = (
+				BFA47DC72561144D00D70DB2 /* SFPlayer.cpp */,
+				BFA47DC82561144D00D70DB2 /* SFPlayer.h */,
+			);
+			path = src;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXHeadersBuildPhase section */
+		BFA47DB42561140600D70DB2 /* Headers */ = {
+			isa = PBXHeadersBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				BFA47DBC2561140600D70DB2 /* pioneer2.hpp in Headers */,
+				BFA47DCA2561144E00D70DB2 /* SFPlayer.h in Headers */,
+				BFA47DBE2561140600D70DB2 /* pioneer2Priv.hpp in Headers */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXHeadersBuildPhase section */
+
+/* Begin PBXNativeTarget section */
+		BFA47DB72561140600D70DB2 /* pioneer2 */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = BFA47DC32561140600D70DB2 /* Build configuration list for PBXNativeTarget "pioneer2" */;
+			buildPhases = (
+				BFA47DB42561140600D70DB2 /* Headers */,
+				BFA47DB52561140600D70DB2 /* Sources */,
+				BFA47DB62561140600D70DB2 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = pioneer2;
+			productName = pioneer2;
+			productReference = BFA47DB82561140600D70DB2 /* libpioneer2.a */;
+			productType = "com.apple.product-type.library.static";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		BFA47DB02561140600D70DB2 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				LastUpgradeCheck = 1150;
+				ORGANIZATIONNAME = "李胜存";
+				TargetAttributes = {
+					BFA47DB72561140600D70DB2 = {
+						CreatedOnToolsVersion = 11.5;
+					};
+				};
+			};
+			buildConfigurationList = BFA47DB32561140600D70DB2 /* Build configuration list for PBXProject "pioneer2" */;
+			compatibilityVersion = "Xcode 9.3";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = BFA47DAF2561140600D70DB2;
+			productRefGroup = BFA47DB92561140600D70DB2 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				BFA47DB72561140600D70DB2 /* pioneer2 */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXSourcesBuildPhase section */
+		BFA47DB52561140600D70DB2 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				BFA47DC02561140600D70DB2 /* pioneer2.cpp in Sources */,
+				BFA47DC92561144E00D70DB2 /* SFPlayer.cpp in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		BFA47DC12561140600D70DB2 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 10.15;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = macosx;
+			};
+			name = Debug;
+		};
+		BFA47DC22561140600D70DB2 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 10.15;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				SDKROOT = macosx;
+			};
+			name = Release;
+		};
+		BFA47DC42561140600D70DB2 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				EXECUTABLE_PREFIX = lib;
+				GCC_ENABLE_CPP_EXCEPTIONS = YES;
+				GCC_ENABLE_CPP_RTTI = YES;
+				HEADER_SEARCH_PATHS = (
+					../../../3rdparty/sdl2/windows/include,
+					../../../3rdparty/ffmpeg/windows/include,
+				);
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+			};
+			name = Debug;
+		};
+		BFA47DC52561140600D70DB2 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				EXECUTABLE_PREFIX = lib;
+				GCC_ENABLE_CPP_EXCEPTIONS = YES;
+				GCC_ENABLE_CPP_RTTI = YES;
+				HEADER_SEARCH_PATHS = (
+					../../../3rdparty/sdl2/windows/include,
+					../../../3rdparty/ffmpeg/windows/include,
+				);
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		BFA47DB32561140600D70DB2 /* Build configuration list for PBXProject "pioneer2" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				BFA47DC12561140600D70DB2 /* Debug */,
+				BFA47DC22561140600D70DB2 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		BFA47DC32561140600D70DB2 /* Build configuration list for PBXNativeTarget "pioneer2" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				BFA47DC42561140600D70DB2 /* Debug */,
+				BFA47DC52561140600D70DB2 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = BFA47DB02561140600D70DB2 /* Project object */;
+}
