@@ -207,9 +207,10 @@ namespace pioneer
             bool* _looping;
 			State* _state;
 			long long* _errorCode;
+            double* _time;
+            long long* _ts;
             PtrQueue* _audioPackets;
             PtrQueue* _audioFrames;
-            int _audioSampleRate;
             AVCodecContext* _audioCodecCtx;
         };
         
@@ -305,10 +306,10 @@ namespace pioneer
                 }
             }
 
-            //int samples = bufmax / bufchs;
-            //impl->_playSampleCount += bufmax / bufchs;
-            //impl->_playTimeGlobal = (impl->_playSampleOffset + impl->_playSampleCount) / (double)impl->_playSampleRate;
-            //static int ind = 0;
+            int samples = bufmax / bufchs;
+            double shift = samples / (double)desc->_audioCodecCtx->sample_rate;
+            *desc->_time += shift;
+            *desc->_ts = 0;
             //printf("Audio[%d]: %lld + %lld, %fs\n", ind++, impl->_playSampleOffset, impl->_playSampleCount, impl->_playTimeGlobal);
           
         }
@@ -448,6 +449,8 @@ namespace pioneer
                 audioDesc._looping = &impl->_looping;
 				audioDesc._state = &impl->_state;
                 audioDesc._errorCode = &impl->_errorCode;
+                audioDesc._time = &impl->_time;
+                audioDesc._ts = &impl->_ts;
                 audioDesc._audioPackets = &audioPackets;
                 audioDesc._audioFrames = &audioFrames;
                 audioDesc._audioCodecCtx = audioCodecCtx;
@@ -527,14 +530,19 @@ namespace pioneer
 						(audioThread && audioFrames.GetDuration() > 2.0) || (videoThread && videoFrames.GetDuration() > 2.0))
 						impl->_state = Playing;
 				}
-				int ret = 0;
                 if ((videoThread && videoPackets.GetDuration() < 2.0) || (audioThread && audioPackets.GetDuration() < 2.0))
                 {//demux
                     AVPacket* packet = av_packet_alloc();
                     if (packet == NULL && error(errorCode, -23))
                         goto end;
-                    if ((ret = av_read_frame(mudexFormatCtx, packet)) != 0 && error(errorCode, -24))
-                        goto end;
+                    int ret = av_read_frame(mudexFormatCtx, packet);
+                    if (ret != 0)
+                    {
+                        if (ret == AVERROR_EOF)
+                            break;
+                        if (error(errorCode, -24))
+                            goto end;
+                    }
                     if (audioThread && packet->stream_index == audioStream->index)
                     {
                         double duration = packet->duration * audioStream->time_base.num / (double)audioStream->time_base.den;
@@ -552,6 +560,15 @@ namespace pioneer
                         packet = NULL;
                     }
                 }
+            }
+                            
+            while (impl->_looping)
+            {
+                if ((audioThread && audioPackets.Size() == 0 && audioFrames.Size() == 0 &&
+                     videoThread && videoPackets.Size() == 0 && videoFrames.Size() == 0) ||
+                    (audioThread && audioPackets.Size() == 0 && audioFrames.Size() == 0) ||
+                    (videoThread && videoPackets.Size() == 0 && videoFrames.Size() == 0))
+                    break;
             }
 
         end:
@@ -627,6 +644,7 @@ namespace pioneer
         Flag _flag;
         State _state;
         double _time;
+        long long _ts;
         bool _looping;
         long long _errorCode;
         SDL_Thread* _mainthread;
@@ -652,6 +670,7 @@ namespace pioneer
         _impl->_flag = flag;
         _impl->_state = Closed;
         _impl->_time = 0.0;
+        _impl->_ts = 0;
         _impl->_looping = true;
         _impl->_errorCode = 0;
         _impl->_mainthread = SDL_CreateThread(SFPlayerImpl::MainThread, "SFPlayer::MainThread", _impl);
@@ -661,89 +680,6 @@ namespace pioneer
             return -2;
         }
         return 0;
-        
-        /*
-        
-		_impl->_filename = filename;
-		_impl->_videoEnabled = videoEnabled;
-		_impl->_audioEnabled = audioEnabled;
-		_impl->_mainthread = NULL;
-		_impl->_looping = true;
-		_impl->_errorCode = 0;
-		
-        
-        
-        _impl->_pFormatCtx = NULL;
-		_impl->_videoStreamIndex = -1;
-		_impl->_audioStreamIndex = -1;
-		_impl->_pVideoCodecCtx = NULL;
-		_impl->_pAudioCodecCtx = NULL;
-
-		void* p = NULL;
-		while ((p = _impl->_videoPackets.Dequeue()) != NULL)
-		{
-			av_packet_unref((AVPacket*)p);
-			av_packet_free((AVPacket**)&p);
-		}
-		while ((p = _impl->_audioPackets.Dequeue()) != NULL)
-		{
-			av_packet_unref((AVPacket*)p);
-			av_packet_free((AVPacket**)&p);
-		}
-		while ((p = _impl->_videoFrames.Dequeue()) != NULL)
-		{
-			av_frame_unref((AVFrame*)p);
-			av_frame_free((AVFrame**)&p);
-		}
-		while ((p = _impl->_audioFrames.Dequeue()) != NULL)
-		{
-			av_frame_unref((AVFrame*)p);
-			av_frame_free((AVFrame**)&p);
-		}
-		_impl->_state = Closed;
-		_impl->_playFileTime = 0;
-		_impl->_updateTimeStamp = 0;
-        
-        
-        
-        
-        
-        
-        
-        
-        SDL_AudioSpec want;
-        SDL_zero(want);
-        want.freq = audioCodecCtx->sample_rate;
-        want.format = AUDIO_S16SYS;
-        want.channels = 2;
-        want.samples = 1024;
-        want.callback = AudioDevice;
-        want.userdata = impl;
-        SDL_AudioSpec real;
-        SDL_zero(real);
-        SDL_AudioDeviceID audioDeviceID = SDL_OpenAudioDevice(NULL, 0, &want, &real, 0);
-        if (audioDeviceID == 0)
-            return -7;
-        //SDL_PauseAudioDevice(audioDeviceID, 0);
-        SDL_Thread* audioThread = SDL_CreateThread(AudioThread, "AudioThread", impl);
-        if (audioThread == NULL)
-            ERROR_END(-11);
-        impl->_threads.push_back(audioThread);
-        audioStream = impl->_pFormatCtx->streams[impl->_audioStreamIndex];
-        
-        
-        
-        
-        
-        
-        
-		_impl->_mainthread = SDL_CreateThread(SFPlayerImpl::MainThread, "SFPlayer::MainThread", _impl);
-		if (_impl->_mainthread == NULL)
-		{
-			Uninit();
-			return -2;
-		}
-		return 0;*/
 	}
 
 	void SFPlayer::Uninit()
