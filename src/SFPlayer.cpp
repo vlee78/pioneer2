@@ -4,6 +4,7 @@
 #include <string>
 #include <vector>
 #include <list>
+#include <chrono>
 #include "SDL.h"
 extern "C"
 {
@@ -94,110 +95,6 @@ namespace pioneer
 		std::list<double> _durations;
 		double _duration;
 	};
-
-
-
-
-
-        
-        
-        
-        
-        
-        
-        /*
-        long long _updateTimeStamp;
-        PtrQueue _videoPackets;
-        PtrQueue _audioPackets;
-        PtrQueue _videoFrames;
-        PtrQueue _audioFrames;
-		SDL_Window* _window;
-		SDL_Renderer* _renderer;
-		SDL_Texture* _texture;
-		std::vector<SDL_Thread*> _threads;
-
-		AVFormatContext* _pFormatCtx;
-		int _videoStreamIndex;
-		int _audioStreamIndex;
-		AVCodecContext* _pVideoCodecCtx;
-		AVCodecContext* _pAudioCodecCtx;
-		*/
-         
-
-
-		
-
-		
-		static int VideoThread(void* param)
-		{/*
-			SFPlayerImpl* impl = (SFPlayerImpl*)param;
-			AVFrame* frame = NULL;
-			while (impl->_looping)
-			{
-				AVPacket* packet = (AVPacket*)impl->_videoPackets.Dequeue();
-				if (packet == NULL)
-					continue;
-				int ret = avcodec_send_packet(impl->_pVideoCodecCtx, packet);
-				av_packet_unref(packet);
-				av_packet_free(&packet);
-				packet = NULL;
-				if (ret != 0)
-				{
-					impl->_errorCode = -21;
-					impl->_looping = false;
-					break;
-				}
-				while (true)
-				{
-					if (frame == NULL)
-					{
-						frame = av_frame_alloc();
-						if (frame == NULL)
-						{
-							impl->_errorCode = -22;
-							impl->_looping = false;
-							break;
-						}
-					}
-					int ret = avcodec_receive_frame(impl->_pVideoCodecCtx, frame);
-					if (ret < 0)
-					{
-						if (ret != AVERROR(EAGAIN) && ret != AVERROR_EOF)
-						{
-							impl->_errorCode = -23;
-							impl->_looping = false;
-						}
-						break;
-					}
-					static int ind = 0;
-					AVStream* stream = impl->_pFormatCtx->streams[impl->_videoStreamIndex];
-					AVRational time_base = stream->time_base;
-					printf("[%d] Frame %c (%d) pts:%lld dts:%lld key_frame:%d [coded_picture_number:%d, display_picture_number:%d, %dx%d] timebase=%d/%d\n",
-						ind++,
-						av_get_picture_type_char(frame->pict_type),
-						0,//videoState->video_ctx->frame_number,
-						frame->pts,
-						frame->pkt_dts,
-						frame->key_frame,
-						frame->coded_picture_number,
-						frame->display_picture_number,
-						frame->width,
-						frame->height,
-						time_base.num,
-						time_base.den);
-					//frame->pkt_duration
-					impl->_videoFrames.Enqueue(frame, 0);
-					frame = NULL;
-				}
-			}
-			if (frame != NULL)
-			{
-				av_frame_free(&frame);
-				av_free(frame);
-				frame = NULL;
-			}*/
-			return 0;
-		}
 
     class SFPlayer::SFPlayerImpl
     {
@@ -377,6 +274,80 @@ namespace pioneer
             }
             return 0;
         }
+
+		struct VideoDesc
+		{
+			bool* _looping;
+			State* _state;
+			long long* _errorCode;
+			double* _time;
+			long long* _ts;
+			PtrQueue* _videoPackets;
+			PtrQueue* _videoFrames;
+			AVStream* _videoStream;
+			AVCodecContext* _videoCodecCtx;
+		};
+
+		static int VideoThread(void* param)
+		{
+			VideoDesc* desc = (VideoDesc*)param;
+			AVRational* timebase = &desc->_videoStream->time_base;
+			AVFrame* frame = NULL;
+			while (*desc->_looping)
+			{
+				if (desc->_videoFrames->GetDuration() > 2.0)
+				{
+					SDL_Delay(100);
+					continue;
+				}
+				AVPacket* packet = (AVPacket*)desc->_videoPackets->Dequeue();
+				if (packet == NULL)
+					continue;
+				int ret = avcodec_send_packet(desc->_videoCodecCtx, packet);
+				av_packet_unref(packet);
+				av_packet_free(&packet);
+				packet = NULL;
+				if (ret != 0)
+				{
+					*desc->_errorCode = -21;
+					*desc->_looping = false;
+					break;
+				}
+				while (true)
+				{
+					if (frame == NULL)
+					{
+						frame = av_frame_alloc();
+						if (frame == NULL)
+						{
+							*desc->_errorCode = -22;
+							*desc->_looping = false;
+							break;
+						}
+					}
+					int ret = avcodec_receive_frame(desc->_videoCodecCtx, frame);
+					if (ret < 0)
+					{
+						if (ret != AVERROR(EAGAIN) && ret != AVERROR_EOF)
+						{
+							*desc->_errorCode = -23;
+							*desc->_looping = false;
+						}
+						break;
+					}
+					double duration = frame->pkt_duration * timebase->num / (double)timebase->den;
+					desc->_videoFrames->Enqueue(frame, duration);
+					frame = NULL;
+				}
+			}
+			if (frame != NULL)
+			{
+				av_frame_free(&frame);
+				av_free(frame);
+				frame = NULL;
+			}
+			return 0;
+		}
         
         static bool error(long long& error, long long code)
         {
@@ -401,6 +372,7 @@ namespace pioneer
             PtrQueue audioFrames;
             PtrQueue videoFrames;
             AudioDesc audioDesc;
+			VideoDesc videoDesc;
             
             SFPlayerImpl* impl = (SFPlayerImpl*)param;
             long long errorCode = 0;
@@ -474,6 +446,16 @@ namespace pioneer
             }
             if (videoStream != NULL)
             {
+				videoDesc._looping = &impl->_looping;
+				videoDesc._state = &impl->_state;
+				videoDesc._errorCode = &impl->_errorCode;
+				videoDesc._time = &impl->_time;
+				videoDesc._ts = &impl->_ts;
+				videoDesc._videoPackets = &videoPackets;
+				videoDesc._videoFrames = &videoFrames;
+				videoDesc._videoStream = videoStream;
+				videoDesc._videoCodecCtx = videoCodecCtx;
+
                 int width = videoCodecCtx->width;
                 int height = videoCodecCtx->height;
                 videoWindow = SDL_CreateWindow("MainWindow", 100, 100, width/2, height/2, SDL_WINDOW_SHOWN);
@@ -485,11 +467,12 @@ namespace pioneer
                 videoTexture = SDL_CreateTexture(videoRenderer, SDL_PIXELFORMAT_IYUV, SDL_TEXTUREACCESS_STREAMING, width, height);
                 if (videoTexture == NULL && error(errorCode, -17))
                     goto end;
-                videoThread = SDL_CreateThread(VideoThread, "VideoThread", impl);
+                videoThread = SDL_CreateThread(VideoThread, "VideoThread", &videoDesc);
                 if (videoThread == NULL && error(errorCode, -18))
                     goto end;
             }
 			impl->_state = Buffering;
+			impl->_ts = std::chrono::high_resolution_clock::now().time_since_epoch().count();
             while (impl->_looping)
             {
                 SDL_Event event;
@@ -501,34 +484,53 @@ namespace pioneer
                         impl->_looping = false;
                         break;
                     };
-                }/*
-                else if (impl->_videoStreamIndex >= 0 && impl->_videoFrames.Size() > 0)
-                {//video render
-                    
-                    AVFrame* frame = (AVFrame*)impl->_videoFrames.Dequeue();
-                    if (frame != NULL)
-                    {
-                        if (SDL_UpdateYUVTexture(impl->_texture, NULL,
-                            frame->data[0], frame->linesize[0],
-                            frame->data[1], frame->linesize[1],
-                            frame->data[2], frame->linesize[2]) != 0)
-                        {
-                            impl->_errorCode = -11;
-                            goto end;
-                        }
-                        SDL_RenderCopy(impl->_renderer, impl->_texture, NULL, NULL);
-                        SDL_RenderPresent(impl->_renderer);
-                        SDL_Delay(20);
-                        av_frame_unref(frame);
-                        av_frame_free(&frame);
-                        frame = NULL;
-                    }
-                }*/
+					continue;
+                }
 				if (impl->_state == Buffering)
 				{
-					if ((audioThread && videoThread && audioFrames.GetDuration() > 2.0 && videoFrames.GetDuration() > 2.0) || 
+					if ((audioThread && videoThread && audioFrames.GetDuration() > 2.0 && videoFrames.GetDuration() > 2.0) ||
 						(audioThread && audioFrames.GetDuration() > 2.0) || (videoThread && videoFrames.GetDuration() > 2.0))
+					{
 						impl->_state = Playing;
+						impl->_ts = std::chrono::high_resolution_clock::now().time_since_epoch().count();
+					}
+				}
+				if (impl->_state == Playing && videoThread)
+				{
+					AVFrame* frame = (AVFrame*)videoFrames.PeekFront();
+					if (frame == NULL)
+					{
+						impl->_state = Buffering;
+						impl->_ts = std::chrono::high_resolution_clock::now().time_since_epoch().count();
+					}
+					else
+					{
+						long long pts = frame->best_effort_timestamp;
+						double time = pts * videoStream->time_base.num / (double)videoStream->time_base.den;
+						if (time >= impl->_time)
+						{
+							if (SDL_UpdateYUVTexture(videoTexture, NULL, frame->data[0], frame->linesize[0],
+								frame->data[1], frame->linesize[1], frame->data[2], frame->linesize[2]) != 0 && error(errorCode, -11))
+								goto end;
+							if (SDL_RenderCopy(videoRenderer, videoTexture, NULL, NULL) != 0 && error(errorCode, -13))
+								goto end;
+							SDL_RenderPresent(videoRenderer);
+							frame = (AVFrame*)videoFrames.Dequeue();
+							av_frame_unref(frame);
+							av_frame_free(&frame);
+							frame = NULL;
+						}
+						if (audioThread == NULL)
+						{
+							long long nanoTs = std::chrono::high_resolution_clock::now().time_since_epoch().count();
+							long long nanoDiff = nanoTs - impl->_ts;
+							if (nanoDiff > 0)
+							{
+								impl->_time += nanoDiff / (double)1000000000l;
+								impl->_ts = nanoTs;
+							}
+						}
+					}
 				}
                 if ((videoThread && videoPackets.GetDuration() < 2.0) || (audioThread && audioPackets.GetDuration() < 2.0))
                 {//demux

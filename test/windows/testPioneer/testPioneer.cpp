@@ -36,11 +36,11 @@ int main(int argc, char* argv[])
 	//return pioneer::Pioneer2::testSDLSample(argc, argv);
 
 	pioneer::SFPlayer player;
-	player.Init("test.mov", pioneer::SFPlayer::NoVideo);
+	player.Init("test.mov", pioneer::SFPlayer::NoAudio);
 	//player.Init("california.mkv");
 	//player.Init("nevada.mkv");
 	//player.Init("idaho.mkv");
-	//player.Init("mojito.mp3");
+	//player.Init("mojito.mp3", pioneer::SFPlayer::NoVideo);
 	
 	getchar();
 	return 0;
