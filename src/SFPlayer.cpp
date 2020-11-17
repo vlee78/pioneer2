@@ -111,6 +111,24 @@ namespace pioneer
             AVCodecContext* _audioCodecCtx;
         };
         
+		static void log(const char* format, ...)
+		{
+			static FILE* file = NULL;
+			if (file == NULL)
+				file = fopen("log.txt", "wb");
+			va_list list;
+			va_start(list, format);
+			vfprintf(file, format, list);
+			va_end(list);
+			fflush(file);
+
+			va_list list2;
+			va_start(list2, format);
+			vprintf(format, list2);
+			va_end(list2);
+			
+		}
+
         static void AudioDevice(void* userdata, Uint8* stream, int len)
         {
             AudioDesc* desc = (AudioDesc*)userdata;
@@ -488,11 +506,11 @@ namespace pioneer
             {
 				long long currTs = std::chrono::high_resolution_clock::now().time_since_epoch().count();
 				double tt = (currTs - startTs) / 1000000000.0;
-				printf("[%d] %.3fs %s A[%d,%d] V[%d,%d]\n", ind++, tt, StateNames[impl->_state], audioPackets.Size(), audioFrames.Size(), videoPackets.Size(), videoFrames.Size());
+				log("[%d] %.3fs %s A[%d,%d] V[%d,%d]\n", ind++, tt, StateNames[impl->_state], audioPackets.Size(), audioFrames.Size(), videoPackets.Size(), videoFrames.Size());
                 SDL_Event event;
                 if (SDL_PollEvent(&event))
                 {
-					printf("SDL event process: %d\n", event.type);
+					log("SDL event process: %d\n", event.type);
                     switch (event.type)
                     {
                     case SDL_QUIT:
@@ -508,7 +526,7 @@ namespace pioneer
 					{
 						impl->_state = Playing;
 						impl->_ts = std::chrono::high_resolution_clock::now().time_since_epoch().count();
-						printf("State %s -> %s \n", StateNames[Buffering], StateNames[Playing]);
+						log("State %s -> %s \n", StateNames[Buffering], StateNames[Playing]);
 						continue;
 					}
 				}
@@ -519,14 +537,14 @@ namespace pioneer
 					{
 						impl->_state = Buffering;
 						impl->_ts = std::chrono::high_resolution_clock::now().time_since_epoch().count();
-						printf("State %s -> %s \n", StateNames[Playing], StateNames[Buffering]);
+						log("State %s -> %s \n", StateNames[Playing], StateNames[Buffering]);
 						continue;
 					}
 					else
 					{
 						long long pts = frame->best_effort_timestamp;
 						double time = pts * videoStream->time_base.num / (double)videoStream->time_base.den;
-						if (time >= impl->_time)
+						if (time <= impl->_time)
 						{
 							if (SDL_UpdateYUVTexture(videoTexture, NULL, frame->data[0], frame->linesize[0],
 								frame->data[1], frame->linesize[1], frame->data[2], frame->linesize[2]) != 0 && error(errorCode, -11))
@@ -538,20 +556,21 @@ namespace pioneer
 							av_frame_unref(frame);
 							av_frame_free(&frame);
 							frame = NULL;
-							printf("Render video frame pts:%.3f\n", time);
-
-							if (audioThread == NULL)
-							{
-								long long nanoTs = std::chrono::high_resolution_clock::now().time_since_epoch().count();
-								long long nanoDiff = nanoTs - impl->_ts;
-								if (nanoDiff > 0)
-								{
-									impl->_time += nanoDiff / (double)1000000000l;
-									impl->_ts = nanoTs;
-								}
-							}
-							continue;
+							log("Render video frame pts:%.3f\n", time);
 						}
+						if (audioThread == NULL)
+						{
+							long long nanoTs = std::chrono::high_resolution_clock::now().time_since_epoch().count();
+							long long nanoDiff = nanoTs - impl->_ts;
+							double diffSecs = nanoDiff / (double)1000000000l;
+							if (nanoDiff > 0)
+							{
+								impl->_time += diffSecs;
+								impl->_ts = nanoTs;
+							}
+							log("Advance time %.3fs:(+%.3fs)\n", impl->_time, diffSecs);
+						}
+						continue;
 					}
 				}
                 if ((videoThread && videoPackets.GetDuration() < 2.0) || (audioThread && audioPackets.GetDuration() < 2.0))
@@ -571,20 +590,20 @@ namespace pioneer
                     {
                         double duration = packet->duration * audioStream->time_base.num / (double)audioStream->time_base.den;
                         audioPackets.Enqueue(packet, duration);
-						printf("demux audio packet A[%d+1, %d] V[%d,%d]\n", audioPackets.Size(), audioFrames.Size(), videoPackets.Size(), videoFrames.Size());
+						log("demux audio packet A[%d+1, %d] V[%d,%d]\n", audioPackets.Size(), audioFrames.Size(), videoPackets.Size(), videoFrames.Size());
                     }
                     else if (videoThread && packet->stream_index == videoStream->index)
                     {
                         double duration = packet->duration * videoStream->time_base.num / (double)videoStream->time_base.den;
                         videoPackets.Enqueue(packet, duration);
-						printf("demux video packet A[%d, %d] V[%d+1,%d]\n", audioPackets.Size(), audioFrames.Size(), videoPackets.Size(), videoFrames.Size());
+						log("demux video packet A[%d, %d] V[%d+1,%d]\n", audioPackets.Size(), audioFrames.Size(), videoPackets.Size(), videoFrames.Size());
                     }
                     else
                     {
                         av_packet_unref(packet);
                         av_packet_free(&packet);
                         packet = NULL;
-						printf("demux unknown packet\n");
+						log("demux unknown packet\n");
                     }
 					continue;
                 }
