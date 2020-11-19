@@ -120,6 +120,7 @@ namespace pioneer
 			AVStream* _videoStream;
 			PtrQueue _videoPackets;
 			PtrQueue _videoFrames;
+			bool _eof;
         };
         
 		static void log(const char* format, ...)
@@ -235,6 +236,72 @@ namespace pioneer
             desc->_impl->_ts = 0;
             //printf("Audio[%d]: %lld + %lld, %fs\n", ind++, impl->_playSampleOffset, impl->_playSampleCount, impl->_playTimeGlobal);
         }
+
+		static int RenderThread(void* param)
+		{
+			Desc* desc = (Desc*)param;
+			while (desc->_impl->_looping)
+			{
+				if (desc->_impl->_state != Playing)
+				{
+					SDL_Delay(100);
+					continue;
+				}
+				AVFrame* frame = (AVFrame*)desc->_videoFrames.PeekFront();
+				if (frame == NULL)
+				{
+					desc->_impl->_state = Buffering;
+					desc->_impl->_ts = std::chrono::high_resolution_clock::now().time_since_epoch().count();
+					//log("Main: State %s -> %s \n", StateNames[Playing], StateNames[Buffering]);
+					continue;
+				}
+				else
+				{
+					long long pts = frame->best_effort_timestamp;
+					double time = pts * desc->_videoStream->time_base.num / (double)desc->_videoStream->time_base.den;
+					if (time <= desc._impl->_time)
+					{
+						if (SDL_UpdateYUVTexture(videoTexture, NULL, frame->data[0], frame->linesize[0],
+							frame->data[1], frame->linesize[1], frame->data[2], frame->linesize[2]) != 0 && error(errorCode, -11))
+							goto end;
+						if (SDL_RenderCopy(videoRenderer, videoTexture, NULL, NULL) != 0 && error(errorCode, -13))
+							goto end;
+						SDL_RenderPresent(videoRenderer);
+						frame = (AVFrame*)desc._videoFrames.Dequeue();
+						av_frame_unref(frame);
+						av_frame_free(&frame);
+						frame = NULL;
+						log("Main: Render video frame pts:%.3f time:0.3fs ts=%lld\n", time, desc._impl->_time, desc._impl->_ts / 1000000);
+						if (audioThread == NULL)
+						{
+							long long nanoTs = std::chrono::high_resolution_clock::now().time_since_epoch().count();
+							long long nanoDiff = nanoTs - desc._impl->_ts;
+							double diffSecs = nanoDiff / (double)1000000000l;
+							if (nanoDiff > 0)
+							{
+								desc._impl->_time += diffSecs;
+								desc._impl->_ts = nanoTs;
+							}
+							log("Main: Advance video time %.3fs:(+%.3fs) ts=%lld\n", desc._impl->_time, diffSecs, desc._impl->_ts / 1000000);
+						}
+						continue;
+					}
+					if (audioThread == NULL)
+					{
+						long long nanoTs = std::chrono::high_resolution_clock::now().time_since_epoch().count();
+						long long nanoDiff = nanoTs - desc._impl->_ts;
+						double diffSecs = nanoDiff / (double)1000000000l;
+						if (nanoDiff > 0)
+						{
+							desc._impl->_time += diffSecs;
+							desc._impl->_ts = nanoTs;
+						}
+						log("Main: Advance video time %.3fs:(+%.3fs) ts=%lld\n", desc._impl->_time, diffSecs, desc._impl->_ts / 1000000);
+					}
+				}
+			}
+			return 0;
+		}
         
         static int AudioThread(void* param)
         {
@@ -373,6 +440,63 @@ namespace pioneer
 			return 0;
 		}
         
+		static int DemuxThread(void* param)
+		{
+			Desc* desc = (Desc*)param;
+			while (desc->_impl->_looping)
+			{
+				if (desc->_eof || (desc->_impl->_state != Buffering && desc->_impl->_state != Playing))
+				{
+					SDL_Delay(100);
+					continue;
+				}
+				if ((desc->_videoStream && desc->_videoPackets.GetDuration() >= 2.5) || (desc->_audioStream && desc->_audioPackets.GetDuration() >= 2.5))
+				{
+					SDL_Delay(100);
+					continue;
+				}
+				AVPacket* packet = av_packet_alloc();
+				if (packet == NULL)
+				{
+					desc->_impl->_errorCode = -1;
+					desc->_impl->_looping = false;
+					break;
+				}
+				int ret = av_read_frame(desc->_demuxFormatCtx, packet);
+				if (ret == 0)
+				{
+					if (desc->_audioStream && packet->stream_index == desc->_audioStream->index)
+					{
+						double duration = packet->duration * desc->_audioStream->time_base.num / (double)desc->_audioStream->time_base.den;
+						desc->_audioPackets.Enqueue(packet, duration);
+					}
+					else if (desc->_videoStream && packet->stream_index == desc->_videoStream->index)
+					{
+						double duration = packet->duration * desc->_videoStream->time_base.num / (double)desc->_videoStream->time_base.den;
+						desc->_videoPackets.Enqueue(packet, duration);
+					}
+					packet = NULL;
+				}
+				else if (ret == AVERROR_EOF)
+				{
+					desc->_eof = true;
+				}
+				else 
+				{
+					desc->_impl->_errorCode = -2;
+					desc->_impl->_looping = false;
+					break;
+				}
+				if (packet != NULL)
+				{
+					av_packet_unref(packet);
+					av_packet_free(&packet);
+					packet = NULL;
+				}
+			}
+			return 0;
+		}
+
         static bool error(long long& error, long long code)
         {
             error = code;
@@ -388,8 +512,12 @@ namespace pioneer
 			desc._audioStream = NULL;
 			desc._videoCodecCtx = NULL;
 			desc._videoStream = NULL;
+			desc._eof = false;
             SDL_Thread* audioThread = NULL;
             SDL_Thread* videoThread = NULL;
+			SDL_Thread* demuxThread = NULL;
+			SDL_Thread* renderThread = NULL;
+
             SDL_Window* videoWindow = NULL;
             SDL_Renderer* videoRenderer = NULL;
             SDL_Texture* videoTexture = NULL;
@@ -484,6 +612,13 @@ namespace pioneer
 				"Playing(3)",
 			};
 
+			demuxThread = SDL_CreateThread(DemuxThread, "DemuxThread", &desc);
+			if (demuxThread == NULL && error(errorCode, -19))
+				goto end;
+			renderThread = SDL_CreateThread(RenderThread, "RenderThread", &desc);
+			if (renderThread == NULL)
+				goto end;
+
             while (desc._impl->_looping)
             {
 				long long currTs = std::chrono::high_resolution_clock::now().time_since_epoch().count();
@@ -512,100 +647,6 @@ namespace pioneer
 						continue;
 					}
 				}
-				if (desc._impl->_state == Playing && videoThread)
-				{
-					AVFrame* frame = (AVFrame*)desc._videoFrames.PeekFront();
-					if (frame == NULL)
-					{
-						desc._impl->_state = Buffering;
-						desc._impl->_ts = std::chrono::high_resolution_clock::now().time_since_epoch().count();
-						log("Main: State %s -> %s \n", StateNames[Playing], StateNames[Buffering]);
-						continue;
-					}
-					else
-					{
-						long long pts = frame->best_effort_timestamp;
-						double time = pts * desc._videoStream->time_base.num / (double)desc._videoStream->time_base.den;
-						if (time <= desc._impl->_time)
-						{
-							if (SDL_UpdateYUVTexture(videoTexture, NULL, frame->data[0], frame->linesize[0],
-								frame->data[1], frame->linesize[1], frame->data[2], frame->linesize[2]) != 0 && error(errorCode, -11))
-								goto end;
-							if (SDL_RenderCopy(videoRenderer, videoTexture, NULL, NULL) != 0 && error(errorCode, -13))
-								goto end;
-							SDL_RenderPresent(videoRenderer);
-							frame = (AVFrame*)desc._videoFrames.Dequeue();
-							av_frame_unref(frame);
-							av_frame_free(&frame);
-							frame = NULL;
-							log("Main: Render video frame pts:%.3f time:0.3fs ts=%lld\n", time, desc._impl->_time, desc._impl->_ts/1000000);
-							if (audioThread == NULL)
-							{
-								long long nanoTs = std::chrono::high_resolution_clock::now().time_since_epoch().count();
-								long long nanoDiff = nanoTs - desc._impl->_ts;
-								double diffSecs = nanoDiff / (double)1000000000l;
-								if (nanoDiff > 0)
-								{
-									desc._impl->_time += diffSecs;
-									desc._impl->_ts = nanoTs;
-								}
-								log("Main: Advance video time %.3fs:(+%.3fs) ts=%lld\n", desc._impl->_time, diffSecs, desc._impl->_ts / 1000000);
-							}
-							continue;
-						}
-						if (audioThread == NULL)
-						{
-							long long nanoTs = std::chrono::high_resolution_clock::now().time_since_epoch().count();
-							long long nanoDiff = nanoTs - desc._impl->_ts;
-							double diffSecs = nanoDiff / (double)1000000000l;
-							if (nanoDiff > 0)
-							{
-								desc._impl->_time += diffSecs;
-								desc._impl->_ts = nanoTs;
-							}
-							log("Main: Advance video time %.3fs:(+%.3fs) ts=%lld\n", desc._impl->_time, diffSecs, desc._impl->_ts / 1000000);
-						}
-					}
-				}
-                if ((videoThread && desc._videoPackets.GetDuration() < 2.0) || (audioThread && desc._audioPackets.GetDuration() < 2.0))
-                {//demux
-                    AVPacket* packet = av_packet_alloc();
-                    if (packet == NULL && error(errorCode, -23))
-                        goto end;
-                    int ret = av_read_frame(desc._demuxFormatCtx, packet);
-                    if (ret != 0)
-                    {
-                        if (ret == AVERROR_EOF)
-                            break;
-                        if (error(errorCode, -24))
-                            goto end;
-                    }
-                    if (audioThread && packet->stream_index == desc._audioStream->index)
-                    {
-                        double duration = packet->duration * desc._audioStream->time_base.num / (double)desc._audioStream->time_base.den;
-						desc._audioPackets.Enqueue(packet, duration);
-						log("Main: Demux audio packet A[++%d, %d] V[%d,%d]\n", desc._audioPackets.Size(), desc._audioFrames.Size(), desc._videoPackets.Size(), desc._videoFrames.Size());
-                    }
-                    else if (videoThread && packet->stream_index == desc._videoStream->index)
-                    {
-                        double duration = packet->duration * desc._videoStream->time_base.num / (double)desc._videoStream->time_base.den;
-						desc._videoPackets.Enqueue(packet, duration);
-						log("Main: Demux video packet A[%d, %d] V[++%d,%d]\n", desc._audioPackets.Size(), desc._audioFrames.Size(), desc._videoPackets.Size(), desc._videoFrames.Size());
-                    }
-                    else
-                    {
-                        av_packet_unref(packet);
-                        av_packet_free(&packet);
-                        packet = NULL;
-						log("Main: Demux unknown packet\n");
-                    }
-					continue;
-                }
-				else
-				{
-					log("Main: empty loop delay\n");
-					SDL_Delay(100);
-				}
             }
                             
             while (desc._impl->_looping)
@@ -619,6 +660,16 @@ namespace pioneer
 
         end:
 			desc._impl->_looping = false;
+			if (renderThread != NULL)
+			{
+				SDL_WaitThread(renderThread, NULL);
+				renderThread = NULL;
+			}
+			if (demuxThread != NULL)
+			{
+				SDL_WaitThread(demuxThread, NULL);
+				demuxThread = NULL;
+			}
             if (videoThread != NULL)
             {
                 SDL_WaitThread(videoThread, NULL);
