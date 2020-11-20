@@ -7,20 +7,20 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		67BC7FA425677D90006DE0F9 /* SFPlayer.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 67BC7FA225677D90006DE0F9 /* SFPlayer.cpp */; };
+		67BC7FA525677D90006DE0F9 /* SFPlayer.h in Headers */ = {isa = PBXBuildFile; fileRef = 67BC7FA325677D90006DE0F9 /* SFPlayer.h */; };
 		BFA47DBC2561140600D70DB2 /* pioneer2.hpp in Headers */ = {isa = PBXBuildFile; fileRef = BFA47DBB2561140600D70DB2 /* pioneer2.hpp */; };
 		BFA47DBE2561140600D70DB2 /* pioneer2Priv.hpp in Headers */ = {isa = PBXBuildFile; fileRef = BFA47DBD2561140600D70DB2 /* pioneer2Priv.hpp */; };
 		BFA47DC02561140600D70DB2 /* pioneer2.cpp in Sources */ = {isa = PBXBuildFile; fileRef = BFA47DBF2561140600D70DB2 /* pioneer2.cpp */; };
-		BFA47DC92561144E00D70DB2 /* SFPlayer.cpp in Sources */ = {isa = PBXBuildFile; fileRef = BFA47DC72561144D00D70DB2 /* SFPlayer.cpp */; };
-		BFA47DCA2561144E00D70DB2 /* SFPlayer.h in Headers */ = {isa = PBXBuildFile; fileRef = BFA47DC82561144D00D70DB2 /* SFPlayer.h */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		67BC7FA225677D90006DE0F9 /* SFPlayer.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = SFPlayer.cpp; path = ../../../../src/SFPlayer.cpp; sourceTree = "<group>"; };
+		67BC7FA325677D90006DE0F9 /* SFPlayer.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = SFPlayer.h; path = ../../../../src/SFPlayer.h; sourceTree = "<group>"; };
 		BFA47DB82561140600D70DB2 /* libpioneer2.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = libpioneer2.a; sourceTree = BUILT_PRODUCTS_DIR; };
 		BFA47DBB2561140600D70DB2 /* pioneer2.hpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.h; path = pioneer2.hpp; sourceTree = "<group>"; };
 		BFA47DBD2561140600D70DB2 /* pioneer2Priv.hpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.h; path = pioneer2Priv.hpp; sourceTree = "<group>"; };
 		BFA47DBF2561140600D70DB2 /* pioneer2.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = pioneer2.cpp; sourceTree = "<group>"; };
-		BFA47DC72561144D00D70DB2 /* SFPlayer.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = SFPlayer.cpp; path = ../../../../src/SFPlayer.cpp; sourceTree = "<group>"; };
-		BFA47DC82561144D00D70DB2 /* SFPlayer.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = SFPlayer.h; path = ../../../../src/SFPlayer.h; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -34,10 +34,19 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		67BC7FA125677D7F006DE0F9 /* src */ = {
+			isa = PBXGroup;
+			children = (
+				67BC7FA225677D90006DE0F9 /* SFPlayer.cpp */,
+				67BC7FA325677D90006DE0F9 /* SFPlayer.h */,
+			);
+			path = src;
+			sourceTree = "<group>";
+		};
 		BFA47DAF2561140600D70DB2 = {
 			isa = PBXGroup;
 			children = (
-				BFA47DC62561142800D70DB2 /* src */,
+				67BC7FA125677D7F006DE0F9 /* src */,
 				BFA47DBA2561140600D70DB2 /* pioneer2 */,
 				BFA47DB92561140600D70DB2 /* Products */,
 			);
@@ -61,15 +70,6 @@
 			path = pioneer2;
 			sourceTree = "<group>";
 		};
-		BFA47DC62561142800D70DB2 /* src */ = {
-			isa = PBXGroup;
-			children = (
-				BFA47DC72561144D00D70DB2 /* SFPlayer.cpp */,
-				BFA47DC82561144D00D70DB2 /* SFPlayer.h */,
-			);
-			path = src;
-			sourceTree = "<group>";
-		};
 /* End PBXGroup section */
 
 /* Begin PBXHeadersBuildPhase section */
@@ -78,7 +78,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				BFA47DBC2561140600D70DB2 /* pioneer2.hpp in Headers */,
-				BFA47DCA2561144E00D70DB2 /* SFPlayer.h in Headers */,
+				67BC7FA525677D90006DE0F9 /* SFPlayer.h in Headers */,
 				BFA47DBE2561140600D70DB2 /* pioneer2Priv.hpp in Headers */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -141,7 +141,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				BFA47DC02561140600D70DB2 /* pioneer2.cpp in Sources */,
-				BFA47DC92561144E00D70DB2 /* SFPlayer.cpp in Sources */,
+				67BC7FA425677D90006DE0F9 /* SFPlayer.cpp in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

@@ -8,3 +8,6 @@ build/windows/pioneer/pioneer.VC.db
 /build/windows/pioneer/x64
 /test/windows/testPioneer/*.opendb
 /test/windows/testPioneer/debug.log
+.DS_Store
+/build/mac/pioneer2/pioneer2.xcodeproj/project.xcworkspace/xcuserdata/shengcunli.xcuserdatad/UserInterfaceState.xcuserstate
+/build/mac/pioneer2/pioneer2.xcodeproj/xcuserdata/shengcunli.xcuserdatad/xcschemes/xcschememanagement.plist
