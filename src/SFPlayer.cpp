@@ -559,7 +559,7 @@ namespace pioneer
                 goto end;
             if (desc._audioStream && (desc._audioThread = SDL_CreateThread(AudioThread, "AudioThread", &desc)) == NULL && error(&desc, -15))
                 goto end;
-            if (desc._videoStream && (desc._videoThread = SDL_CreateThread(AudioThread, "AudioThread", &desc)) == NULL && error(&desc, -16))
+            if (desc._videoStream && (desc._videoThread = SDL_CreateThread(VideoThread, "AudioThread", &desc)) == NULL && error(&desc, -16))
                 goto end;
 			if (desc._videoStream && (desc._renderThread = SDL_CreateThread(RenderThread, "RenderThread", &desc)) == NULL && error(&desc, -17))
 				goto end;

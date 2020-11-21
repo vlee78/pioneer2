@@ -145,7 +145,7 @@
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalDependencies>Z:\work\pioneer2\test\windows\testPioneer\x64\Debug\pioneer.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>..\..\..\3rdparty\ffmpeg\windows\lib\swscale.lib;..\..\..\3rdparty\ffmpeg\windows\lib\swresample.lib;..\..\..\3rdparty\ffmpeg\windows\lib\postproc.lib;..\..\..\3rdparty\ffmpeg\windows\lib\avfilter.lib;..\..\..\3rdparty\ffmpeg\windows\lib\avdevice.lib;..\..\..\3rdparty\ffmpeg\windows\lib\avcodec.lib;..\..\..\3rdparty\ffmpeg\windows\lib\avutil.lib;..\..\..\3rdparty\ffmpeg\windows\lib\avformat.lib;..\..\..\3rdparty\sdl2\windows\lib\SDL2.lib;x64\Release\pioneer.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
