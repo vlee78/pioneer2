@@ -590,8 +590,9 @@ namespace pioneer
                 }
 			    if (desc._impl->_state == Playing)
                 {
-					if ((desc._audioStream && desc._videoStream && desc._audioFrames.Size() == 0 && desc._videoFrames.Size() == 0) ||
-						(desc._audioStream && desc._audioFrames.Size() == 0) || (desc._videoStream && desc._videoFrames.Size() == 0))
+					if ((desc._audioStream != NULL && desc._videoStream != NULL && desc._audioFrames.Size() == 0 && desc._videoFrames.Size() == 0) ||
+						(desc._audioStream != NULL && desc._videoStream == NULL && desc._audioFrames.Size() == 0) || 
+						(desc._audioStream == NULL && desc._videoStream != NULL && desc._videoFrames.Size() == 0))
 					{
 						if (desc._eof)
 							desc.swstate(Paused);
@@ -602,8 +603,9 @@ namespace pioneer
                 }
 				else if (desc._impl->_state == Buffering)
 				{
-					if ((desc._audioThread && desc._videoThread && desc._audioFrames.Duration() > 2.0 && desc._videoFrames.Duration() > 2.0) ||
-						(desc._audioThread && desc._audioFrames.Duration() > 2.0) || (desc._videoThread && desc._videoFrames.Duration() > 2.0))
+					if ((desc._audioStream != NULL && desc._videoStream != NULL && desc._audioFrames.Duration() > 2.0 && desc._videoFrames.Duration() > 2.0) ||
+						(desc._audioStream != NULL && desc._videoStream == NULL && desc._audioFrames.Duration() > 2.0) || 
+						(desc._audioStream == NULL && desc._videoStream != NULL && desc._videoFrames.Duration() > 2.0))
 					{
 						desc.swstate(Playing);
 						continue;
