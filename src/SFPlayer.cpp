@@ -90,7 +90,7 @@ namespace pioneer
 			SDL_UnlockMutex(_mutex);
 		}
 
-		double GetDuration()
+		double Duration()
 		{
 			SDL_LockMutex(_mutex);
 			double duration = _duration;
@@ -252,82 +252,53 @@ namespace pioneer
 		static int RenderThread(void* param)
 		{
 			Desc* desc = (Desc*)param;
-            
             SDL_Window* videoWindow = NULL;
             SDL_Renderer* videoRenderer = NULL;
             SDL_Texture* videoTexture = NULL;
             int width = desc->_videoCodecCtx->width;
             int height = desc->_videoCodecCtx->height;
-            long long errorCode = 0;
             videoWindow = SDL_CreateWindow("MainWindow", 100, 100, width/2, height/2, SDL_WINDOW_SHOWN);
-            if (videoWindow == NULL && error(errorCode, -15))
+            if (videoWindow == NULL && error(desc, -401))
                 goto end;
             videoRenderer = SDL_CreateRenderer(videoWindow, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
-            if (videoRenderer == NULL && error(errorCode, -16))
+            if (videoRenderer == NULL && error(desc, -402))
                 goto end;
             videoTexture = SDL_CreateTexture(videoRenderer, SDL_PIXELFORMAT_IYUV, SDL_TEXTUREACCESS_STREAMING, width, height);
-            if (videoTexture == NULL && error(errorCode, -17))
+            if (videoTexture == NULL && error(desc, -403))
                 goto end;
-            
 			while (desc->_impl->_looping)
 			{
-				if (desc->_impl->_state != Playing)
+                AVFrame* frame = NULL;
+				if (desc->_impl->_state != Playing || (frame = (AVFrame*)desc->_videoFrames.PeekFront()) == NULL)
 				{
 					SDL_Delay(100);
 					continue;
 				}
-				AVFrame* frame = (AVFrame*)desc->_videoFrames.PeekFront();
-				if (frame == NULL)
-				{
-					desc->_impl->_state = Buffering;
-					desc->_impl->_ts = std::chrono::high_resolution_clock::now().time_since_epoch().count();
-					//log("Main: State %s -> %s \n", StateNames[Playing], StateNames[Buffering]);
-					continue;
-				}
-				else
-				{
-					long long pts = frame->best_effort_timestamp;
-					double time = pts * desc->_videoStream->time_base.num / (double)desc->_videoStream->time_base.den;
-					if (time <= desc->_impl->_time)
-					{
-						if (SDL_UpdateYUVTexture(videoTexture, NULL, frame->data[0], frame->linesize[0],
-							frame->data[1], frame->linesize[1], frame->data[2], frame->linesize[2]) != 0 && error(errorCode, -11))
-							goto end;
-						if (SDL_RenderCopy(videoRenderer, videoTexture, NULL, NULL) != 0 && error(errorCode, -13))
-							goto end;
-						SDL_RenderPresent(videoRenderer);
-						frame = (AVFrame*)desc->_videoFrames.Dequeue();
-						av_frame_unref(frame);
-						av_frame_free(&frame);
-						frame = NULL;
-						log("Main: Render video frame pts:%.3f time:0.3fs ts=%lld\n", time, desc->_impl->_time, desc->_impl->_ts / 1000000);
-						if (desc->_audioStream == NULL)
-						{
-							long long nanoTs = std::chrono::high_resolution_clock::now().time_since_epoch().count();
-							long long nanoDiff = nanoTs - desc->_impl->_ts;
-							double diffSecs = nanoDiff / (double)1000000000l;
-							if (nanoDiff > 0)
-							{
-								desc->_impl->_time += diffSecs;
-								desc->_impl->_ts = nanoTs;
-							}
-							log("Main: Advance video time %.3fs:(+%.3fs) ts=%lld\n", desc->_impl->_time, diffSecs, desc->_impl->_ts / 1000000);
-						}
-						continue;
-					}
-					if (desc->_audioStream == NULL)
-					{
-						long long nanoTs = std::chrono::high_resolution_clock::now().time_since_epoch().count();
-						long long nanoDiff = nanoTs - desc->_impl->_ts;
-						double diffSecs = nanoDiff / (double)1000000000l;
-						if (nanoDiff > 0)
-						{
-							desc->_impl->_time += diffSecs;
-							desc->_impl->_ts = nanoTs;
-						}
-						log("Main: Advance video time %.3fs:(+%.3fs) ts=%lld\n", desc->_impl->_time, diffSecs, desc->_impl->_ts / 1000000);
-					}
-				}
+                long long pts = frame->best_effort_timestamp;
+                double time = pts * desc->_videoStream->time_base.num / (double)desc->_videoStream->time_base.den;
+                if (time <= desc->_impl->_time)
+                {
+                    if (SDL_UpdateYUVTexture(videoTexture, NULL, frame->data[0], frame->linesize[0], frame->data[1], frame->linesize[1], frame->data[2], frame->linesize[2]) != 0 && error(desc, -404))
+                        goto end;
+                    if (SDL_RenderCopy(videoRenderer, videoTexture, NULL, NULL) != 0 && error(desc, -405))
+                        goto end;
+                    SDL_RenderPresent(videoRenderer);
+                    frame = (AVFrame*)desc->_videoFrames.Dequeue();
+                    av_frame_unref(frame);
+                    av_frame_free(&frame);
+                    frame = NULL;
+                }
+                if (desc->_audioStream == NULL)
+                {
+                    long long nanoTs = std::chrono::high_resolution_clock::now().time_since_epoch().count();
+                    long long nanoDiff = nanoTs - desc->_impl->_ts;
+                    double diffSecs = nanoDiff / (double)1000000000l;
+                    if (nanoDiff > 0)
+                    {
+                        desc->_impl->_time += diffSecs;
+                        desc->_impl->_ts = nanoTs;
+                    }
+                }
 			}
         end:
             if (videoTexture != NULL)
@@ -354,13 +325,10 @@ namespace pioneer
             AVFrame* frame = NULL;
             while (desc->_impl->_looping)
             {
-				if (desc->_audioFrames.GetDuration() > 2.0)
-				{
-					SDL_Delay(100);
-					continue;
-				}
-                AVPacket* packet = (AVPacket*)desc->_audioPackets.Dequeue();
-                if (packet == NULL)
+                AVPacket* packet = NULL;
+                if ((desc->_impl->_state != Buffering && desc->_impl->_state != Playing) ||
+                    (desc->_audioFrames.Duration() > 2.0) ||
+                    (packet = (AVPacket*)desc->_audioPackets.Dequeue()) == NULL)
                 {
                     SDL_Delay(100);
                     continue;
@@ -371,30 +339,21 @@ namespace pioneer
                 packet = NULL;
                 if (ret != 0)
                 {
-                    desc->_impl->_errorCode = -21;
-                    desc->_impl->_looping = false;
+                    error(desc, -301);
                     break;
                 }
-                while (true)
+                while (desc->_impl->_looping)
                 {
-                    if (frame == NULL)
+                    if (frame == NULL && (frame = av_frame_alloc()) == NULL)
                     {
-                        frame = av_frame_alloc();
-                        if (frame == NULL)
-                        {
-                            desc->_impl->_errorCode = -22;
-                            desc->_impl->_looping = false;
-                            break;
-                        }
+                        error(desc, -302);
+                        break;
                     }
                     ret = avcodec_receive_frame(desc->_audioCodecCtx, frame);
                     if (ret < 0)
                     {
                         if (ret != AVERROR(EAGAIN) && ret != AVERROR_EOF)
-                        {
-                            desc->_impl->_errorCode = -23;
-                            desc->_impl->_looping = false;
-                        }
+                            error(desc, -303);
                         break;
                     }
                     double duration = frame->nb_samples / (double)frame->sample_rate;
@@ -414,22 +373,15 @@ namespace pioneer
 		static int VideoThread(void* param)
 		{
 			Desc* desc = (Desc*)param;
-			AVRational* timebase = &desc->_videoStream->time_base;
-			AVFrame* frame = NULL;
-			int ind = 0;
+            double timebase = desc->_videoStream->time_base.num / (double)desc->_videoStream->time_base.den;
+            AVFrame* frame = NULL;
 			while (desc->_impl->_looping)
 			{
-				log("  Video[%d] A[%d,%d] V[%d,%d] time:%0.3fs ts=%lld\n", ind++, desc->_audioPackets.Size(), desc->_audioFrames.Size(), desc->_videoPackets.Size(), desc->_videoFrames.Size(), desc->_impl->_time, desc->_impl->_ts/1000000);
-				if (desc->_videoFrames.GetDuration() > 2.0)
+                AVPacket* packet = NULL;
+				if ((desc->_impl->_state != Buffering && desc->_impl->_state != Playing) ||
+                    (desc->_videoFrames.Duration() > 2.0) ||
+                    (packet = (AVPacket*)desc->_videoPackets.Dequeue()) == NULL)
 				{
-					log("  Video: frames queue full, delay 100ms\n");
-					SDL_Delay(100);
-					continue;
-				}
-				AVPacket* packet = (AVPacket*)desc->_videoPackets.Dequeue();
-				if (packet == NULL)
-				{
-					log("  Video: packet queue empty, delay 100ms\n");
 					SDL_Delay(100);
 					continue;
 				}
@@ -439,47 +391,32 @@ namespace pioneer
 				packet = NULL;
 				if (ret != 0)
 				{
-					log("  Video: decode send packet failed, terminating\n");
-					desc->_impl->_errorCode = -21;
-					desc->_impl->_looping = false;
-					break;
+                    error(desc, -201);
+                    break;
 				}
-				while (true)
+				while (desc->_impl->_looping)
 				{
-					if (frame == NULL)
+					if (frame == NULL && (frame = av_frame_alloc()) == NULL)
 					{
-						frame = av_frame_alloc();
-						if (frame == NULL)
-						{
-							log("  Video: alloc frame failed, terminating\n");
-							desc->_impl->_errorCode = -22;
-							desc->_impl->_looping = false;
-							break;
-						}
+                        error(desc, -202);
+                        break;
 					}
 					int ret = avcodec_receive_frame(desc->_videoCodecCtx, frame);
 					if (ret < 0)
-					{
-						if (ret != AVERROR(EAGAIN) && ret != AVERROR_EOF)
-						{
-							log("  Video: decode recv frame failed, terminating\n");
-							desc->_impl->_errorCode = -23;
-							desc->_impl->_looping = false;
-						}
-						else
-							log("  Video: descode patial frame, continue\n");
-						break;
-					}
-					double duration = frame->pkt_duration * timebase->num / (double)timebase->den;
+                    {
+                        if (ret != AVERROR(EAGAIN) && ret != AVERROR_EOF)
+                            error(desc, -203);
+                        break;
+                    }
+					double duration = frame->pkt_duration * timebase;
 					desc->_videoFrames.Enqueue(frame, duration);
 					frame = NULL;
-					log("  Video: descode one frame A[%d,%d] V[%d,++%d]\n", desc->_audioPackets.Size(), desc->_audioFrames.Size(), desc->_videoPackets.Size(), desc->_videoFrames.Size());
 				}
 			}
 			if (frame != NULL)
 			{
+                av_frame_unref(frame);
 				av_frame_free(&frame);
-				av_free(frame);
 				frame = NULL;
 			}
 			return 0;
@@ -495,19 +432,18 @@ namespace pioneer
 					SDL_Delay(100);
 					continue;
 				}
-				if ((desc->_videoStream && desc->_videoPackets.GetDuration() >= 2.5) || (desc->_audioStream && desc->_audioPackets.GetDuration() >= 2.5))
+				if ((desc->_videoStream && desc->_videoPackets.Duration() >= 2.5) || (desc->_audioStream && desc->_audioPackets.Duration() >= 2.5))
 				{
 					SDL_Delay(100);
 					continue;
 				}
 				AVPacket* packet = av_packet_alloc();
-				if (packet == NULL)
-				{
-					desc->_impl->_errorCode = -1;
-					desc->_impl->_looping = false;
-					break;
-				}
-				int ret = av_read_frame(desc->_demuxFormatCtx, packet);
+                if (packet == NULL)
+                {
+                    error(desc, -101);
+                    break;
+                }
+                int ret = av_read_frame(desc->_demuxFormatCtx, packet);
 				if (ret == 0)
 				{
 					if (desc->_audioStream && packet->stream_index == desc->_audioStream->index)
@@ -524,13 +460,12 @@ namespace pioneer
 				}
 				else if (ret == AVERROR_EOF)
 				{
-					desc->_eof = true;
+                    desc->_eof = true;
 				}
 				else 
 				{
-					desc->_impl->_errorCode = -2;
-					desc->_impl->_looping = false;
-					break;
+                    error(desc, -102);
+                    break;
 				}
 				if (packet != NULL)
 				{
@@ -542,9 +477,10 @@ namespace pioneer
 			return 0;
 		}
 
-        static bool error(long long& error, long long code)
+        static bool error(Desc* desc, long long code)
         {
-            error = code;
+            desc->_impl->_errorCode = code;
+            desc->_impl->_looping = false;
             return true;
         }
         
@@ -562,11 +498,11 @@ namespace pioneer
             desc._videoThread = NULL;
 			desc._demuxThread = NULL;
 			desc._renderThread = NULL;
-
-            long long errorCode = 0;
-            if (avformat_open_input(&desc._demuxFormatCtx, desc._impl->_filename.c_str(), NULL, NULL) != 0 && error(errorCode, -1))
+            if (SDL_Init(SDL_INIT_AUDIO | SDL_INIT_VIDEO | SDL_INIT_TIMER) != 0 && error(&desc, -1))
                 goto end;
-            if (avformat_find_stream_info(desc._demuxFormatCtx, NULL) < 0 && error(errorCode, -2))
+            if (avformat_open_input(&desc._demuxFormatCtx, desc._impl->_filename.c_str(), NULL, NULL) != 0 && error(&desc, -2))
+                goto end;
+            if (avformat_find_stream_info(desc._demuxFormatCtx, NULL) < 0 && error(&desc, -3))
                 goto end;
             for (int i = 0; i < (int)desc._demuxFormatCtx->nb_streams; i++)
             {
@@ -576,32 +512,30 @@ namespace pioneer
                     desc._videoStream = desc._demuxFormatCtx->streams[i];
             }
             if (((desc._audioStream == NULL && desc._videoStream == NULL) || (desc._audioStream == NULL && desc._impl->_flag == NoVideo) ||
-                (desc._videoStream == NULL && desc._impl->_flag == NoAudio)) && error(errorCode, -3))
-                goto end;
-            if (SDL_Init(SDL_INIT_AUDIO | SDL_INIT_VIDEO | SDL_INIT_TIMER) != 0 && error(errorCode, -4))
+                 (desc._videoStream == NULL && desc._impl->_flag == NoAudio)) && error(&desc, -4))
                 goto end;
             if (desc._audioStream != NULL)
             {
                 AVCodec* audioCodec = avcodec_find_decoder(desc._audioStream->codecpar->codec_id);
-                if (audioCodec == NULL && error(errorCode, -5))
+                if (audioCodec == NULL && error(&desc, -5))
                     goto end;
-                if ((desc._audioCodecCtx = avcodec_alloc_context3(audioCodec)) == NULL && error(errorCode, -6))
+                if ((desc._audioCodecCtx = avcodec_alloc_context3(audioCodec)) == NULL && error(&desc, -6))
                     goto end;
-                if (avcodec_parameters_to_context(desc._audioCodecCtx, desc._audioStream->codecpar) != 0 && error(errorCode, -7))
+                if (avcodec_parameters_to_context(desc._audioCodecCtx, desc._audioStream->codecpar) != 0 && error(&desc, -7))
                     goto end;
-                if (avcodec_open2(desc._audioCodecCtx, audioCodec, NULL) != 0 && error(errorCode, -8))
+                if (avcodec_open2(desc._audioCodecCtx, audioCodec, NULL) != 0 && error(&desc, -8))
                     goto end;
             }
             if (desc._videoStream != NULL)
             {
                 AVCodec* videoCodec = avcodec_find_decoder(desc._videoStream->codecpar->codec_id);
-                if (videoCodec == NULL && error(errorCode, -9))
+                if (videoCodec == NULL && error(&desc, -9))
                     goto end;
-                if ((desc._videoCodecCtx = avcodec_alloc_context3(videoCodec)) == NULL && error(errorCode, -10))
+                if ((desc._videoCodecCtx = avcodec_alloc_context3(videoCodec)) == NULL && error(&desc, -10))
                     goto end;
-                if (avcodec_parameters_to_context(desc._videoCodecCtx, desc._videoStream->codecpar) != 0 && error(errorCode, -11))
+                if (avcodec_parameters_to_context(desc._videoCodecCtx, desc._videoStream->codecpar) != 0 && error(&desc, -11))
                     goto end;
-                if (avcodec_open2(desc._videoCodecCtx, videoCodec, NULL) != 0 && error(errorCode, -12))
+                if (avcodec_open2(desc._videoCodecCtx, videoCodec, NULL) != 0 && error(&desc, -12))
                     goto end;
             }
             if (desc._audioStream != NULL)
@@ -617,33 +551,26 @@ namespace pioneer
                 SDL_AudioSpec real;
                 SDL_zero(real);
                 SDL_AudioDeviceID audioDeviceId = SDL_OpenAudioDevice(NULL, 0, &want, &real, 0);
-                if (audioDeviceId == 0 && error(errorCode, -13))
+                if (audioDeviceId == 0 && error(&desc, -13))
                     goto end;
                 SDL_PauseAudioDevice(audioDeviceId, 0);
             }
-            if ((desc._demuxThread = SDL_CreateThread(DemuxThread, "DemuxThread", &desc)) == NULL && error(errorCode, -19))
+            if ((desc._demuxThread = SDL_CreateThread(DemuxThread, "DemuxThread", &desc)) == NULL && error(&desc, -14))
                 goto end;
-            if (desc._audioStream && (desc._audioThread = SDL_CreateThread(AudioThread, "AudioThread", &desc)) == NULL && error(errorCode, -14))
+            if (desc._audioStream && (desc._audioThread = SDL_CreateThread(AudioThread, "AudioThread", &desc)) == NULL && error(&desc, -15))
                 goto end;
-            if (desc._videoStream && (desc._videoThread = SDL_CreateThread(AudioThread, "AudioThread", &desc)) == NULL && error(errorCode, -14))
+            if (desc._videoStream && (desc._videoThread = SDL_CreateThread(AudioThread, "AudioThread", &desc)) == NULL && error(&desc, -16))
                 goto end;
-			if (desc._videoStream && (desc._renderThread = SDL_CreateThread(RenderThread, "RenderThread", &desc)) == NULL && error(errorCode, -20))
+			if (desc._videoStream && (desc._renderThread = SDL_CreateThread(RenderThread, "RenderThread", &desc)) == NULL && error(&desc, -17))
 				goto end;
-
-            desc._impl->_state = Buffering;
+            desc._impl->_state = Playing;
             desc._impl->_ts = std::chrono::high_resolution_clock::now().time_since_epoch().count();
-            //long long startTs = desc._impl->_ts;
-            //int ind = 0;
             while (desc._impl->_looping)
             {
-				//long long currTs = std::chrono::high_resolution_clock::now().time_since_epoch().count();
-				//double tt = (currTs - startTs) / 1000000000.0;
-				//log("Main[%d] %.3fs %s A[%d,%d] V[%d,%d] time:%0.3f ts=%lld\n", ind++, tt, StateNames[desc._impl->_state], desc._audioPackets.Size(), desc._audioFrames.Size(), desc._videoPackets.Size(), desc._videoFrames.Size(), desc._impl->_time, desc._impl->_ts/1000000);
                 SDL_Event event;
                 if (SDL_PollEvent(&event))
                 {
-					log("Main: SDL event process: %d\n", event.type);
-                    switch (event.type)
+					switch (event.type)
                     {
                     case SDL_QUIT:
 						desc._impl->_looping = false;
@@ -651,29 +578,36 @@ namespace pioneer
                     };
 					continue;
                 }
+                if (desc._impl->_state == Playing)
+                {
+                    if ((desc._audioStream && desc._videoStream && desc._audioFrames.Size() == 0 && desc._videoFrames.Size() == 0) ||
+                        (desc._audioStream && desc._audioFrames.Size() == 0) || (desc._videoStream && desc._videoFrames.Size() == 0))
+                    {
+                        if (desc._eof)
+                        {
+                            desc._impl->_state = Paused;
+                            desc._impl->_ts = std::chrono::high_resolution_clock::now().time_since_epoch().count();
+                        }
+                        else
+                        {
+                            desc._impl->_state = Buffering;
+                            desc._impl->_ts = std::chrono::high_resolution_clock::now().time_since_epoch().count();
+                        }
+                        continue;
+                    }
+                }
 				if (desc._impl->_state == Buffering)
 				{
-					if ((desc._audioThread && desc._videoThread && desc._audioFrames.GetDuration() > 2.0 && desc._videoFrames.GetDuration() > 2.0) ||
-						(desc._audioThread && desc._audioFrames.GetDuration() > 2.0) || (desc._videoThread && desc._videoFrames.GetDuration() > 2.0))
+					if ((desc._audioThread && desc._videoThread && desc._audioFrames.Duration() > 2.0 && desc._videoFrames.Duration() > 2.0) ||
+						(desc._audioThread && desc._audioFrames.Duration() > 2.0) || (desc._videoThread && desc._videoFrames.Duration() > 2.0))
 					{
 						desc._impl->_state = Playing;
 						desc._impl->_ts = std::chrono::high_resolution_clock::now().time_since_epoch().count();
-						log("Main: State %s -> %s \n", StateNames[Buffering], StateNames[Playing]);
 						continue;
 					}
 				}
-                
-                if (desc._eof)
-                {
-                    if ((desc._audioThread && desc._audioPackets.Size() == 0 && desc._audioFrames.Size() == 0 &&
-                         desc._videoThread && desc._videoPackets.Size() == 0 && desc._videoFrames.Size() == 0) ||
-                        (desc._audioThread && desc._audioPackets.Size() == 0 && desc._audioFrames.Size() == 0) ||
-                        (desc._videoThread && desc._videoPackets.Size() == 0 && desc._videoFrames.Size() == 0))
-                         desc._impl->_looping = false;
-                }
             }
         end:
-			desc._impl->_looping = false;
 			if (desc._renderThread != NULL) SDL_WaitThread(desc._renderThread, NULL);
 			if (desc._demuxThread != NULL) SDL_WaitThread(desc._demuxThread, NULL);
             if (desc._videoThread != NULL) SDL_WaitThread(desc._videoThread, NULL);
@@ -717,9 +651,9 @@ namespace pioneer
 			return -1;
         _impl->_filename = filename;
         _impl->_flag = flag;
-        _impl->_state = Closed;
         _impl->_time = 0.0;
-        _impl->_ts = 0;
+        _impl->_state = Closed;
+        _impl->_ts = std::chrono::high_resolution_clock::now().time_since_epoch().count();
         _impl->_looping = true;
         _impl->_errorCode = 0;
         _impl->_mainthread = SDL_CreateThread(SFPlayerImpl::MainThread, "SFPlayer::MainThread", _impl);
