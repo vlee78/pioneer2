@@ -578,12 +578,52 @@ namespace pioneer
 			desc.swstate(Playing);
 			while (desc._impl->_looping)
             {
-			    SDL_Event event;
+				SDL_Event event;
                 if (SDL_PollEvent(&event))
                 {
 					switch (event.type)
                     {
-                    case SDL_QUIT:
+					case SDL_KEYDOWN:
+						if (event.key.keysym.sym == SDLK_LEFT)
+						{
+							desc.log("left\n");
+
+							desc.swstate(Paused);
+							for (AVPacket* packet = (AVPacket*)desc._videoPackets.Dequeue(); packet != NULL; av_packet_unref(packet), av_packet_free(&packet), packet = (AVPacket*)desc._videoPackets.Dequeue());
+							for (AVPacket* packet = (AVPacket*)desc._audioPackets.Dequeue(); packet != NULL; av_packet_unref(packet), av_packet_free(&packet), packet = (AVPacket*)desc._audioPackets.Dequeue());
+							for (AVFrame* frame = (AVFrame*)desc._videoFrames.Dequeue(); frame != NULL; av_frame_unref(frame), av_frame_free(&frame), frame = (AVFrame*)desc._videoFrames.Dequeue());
+							for (AVFrame* frame = (AVFrame*)desc._audioFrames.Dequeue(); frame != NULL; av_frame_unref(frame), av_frame_free(&frame), frame = (AVFrame*)desc._audioFrames.Dequeue());
+							
+							double newtime = desc._impl->_time - 1.0;
+							if (newtime < 0) newtime = 0;
+							long long ts = newtime / (desc._videoStream->time_base.num / (double)desc._videoStream->time_base.den);
+							int ret = av_seek_frame(desc._demuxFormatCtx, desc._videoStream->index, ts, 0);
+							if (ret != 0)
+								break;
+							desc._impl->_time = newtime;
+						}
+						else if (event.key.keysym.sym == SDLK_RIGHT)
+						{
+							desc.log("right\n");
+						}
+						else if (event.key.keysym.sym == SDLK_DOWN)
+						{
+							desc.log("down\n");
+						}
+						else if (event.key.keysym.sym == SDLK_UP)
+						{
+							desc.log("up\n");
+						}
+						else if (event.key.keysym.sym == SDLK_PAGEUP)
+						{
+							desc.log("pgup\n");
+							if (desc._impl->_state == Paused)
+								desc.swstate(Playing);
+							else if (desc._impl->_state == Playing)
+								desc.swstate(Paused);
+						}
+						break;
+					case SDL_QUIT:
 						desc._impl->_looping = false;
 						continue;
                     };
