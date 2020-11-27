@@ -33,8 +33,8 @@ namespace pioneer
 		{
 			_mutex = SDL_CreateMutex();
 			_list.clear();
+			_times.clear();
 			_durations.clear();
-			_duration = 0;
 		}
 
 		~PtrQueue()
@@ -42,8 +42,8 @@ namespace pioneer
 			SDL_DestroyMutex(_mutex);
 			_mutex = NULL;
 			_list.clear();
+			_times.clear();
 			_durations.clear();
-			_duration = 0;
 		}
 
 		int Size()
@@ -71,37 +71,53 @@ namespace pioneer
 			if (_list.size() > 0)
 			{
 				ptr = _list.front();
-				double duration = _durations.front();
-				_duration -= duration;
-				if (duration < 0) duration = 0;
 				_list.pop_front();
+				_times.pop_front();
 				_durations.pop_front();
 			}
 			SDL_UnlockMutex(_mutex);
 			return ptr;
 		}
 
-		void Enqueue(void* ptr, double duration)
+		void Enqueue(void* ptr, double time, double duration)
 		{
 			SDL_LockMutex(_mutex);
 			_list.push_back(ptr);
+			_times.push_back(time);
 			_durations.push_back(duration);
-			_duration += duration;
 			SDL_UnlockMutex(_mutex);
+		}
+
+		double Time()
+		{
+			SDL_LockMutex(_mutex);
+			double time = 0;
+			if (_times.size() > 0)
+			{
+				time = _times.front();
+				if (time < 0) time = 0;
+			}
+			SDL_UnlockMutex(_mutex);
+			return time;
 		}
 
 		double Duration()
 		{
 			SDL_LockMutex(_mutex);
-			double duration = _duration;
+			double duration = 0;
+			if (_times.size() > 0)
+			{
+				duration = _times.back() + _durations.back() - _times.front();
+				if (duration < 0) duration = 0;
+			}
 			SDL_UnlockMutex(_mutex);
 			return duration;
 		}
 
 		SDL_mutex* _mutex;
 		std::list<void*> _list;
+		std::list<double> _times;
 		std::list<double> _durations;
-		double _duration;
 	};
 
     class SFPlayer::SFPlayerImpl
@@ -144,10 +160,12 @@ namespace pioneer
 					file = fopen("log.txt", "wb");
 				static long long lastTs = std::chrono::high_resolution_clock::now().time_since_epoch().count();
 				double time = (std::chrono::high_resolution_clock::now().time_since_epoch().count() - lastTs) / (double)1000000000;
-				fprintf(file, "[(%.3fs,%.3fs) A(%d,%d) V(%d,%d)]: ", time, _impl->_time, 
-					_audioPackets.Size(), _audioFrames.Size(), _videoPackets.Size(), _videoFrames.Size());
-				printf("[(%.3fs,%.3fs) A(%d,%d) V(%d,%d)]: ", time, _impl->_time,
-					_audioPackets.Size(), _audioFrames.Size(), _videoPackets.Size(), _videoFrames.Size());
+				fprintf(file, "[(%.3fs,%.3fs) A[%.3f(%d),%.3f(%d)] V[%.3f(%d),%.3f(%d)]]: ", time, _impl->_time, 
+					_audioPackets.Time(), _audioPackets.Size(), _audioFrames.Time(), _audioFrames.Size(), 
+					_videoPackets.Time(), _videoPackets.Size(), _videoFrames.Time(), _videoFrames.Size());
+				printf("[(%.3fs,%.3fs) A[%.3f(%d),%.3f(%d)] V[%.3f(%d),%.3f(%d)]]: ", time, _impl->_time,
+					_audioPackets.Time(), _audioPackets.Size(), _audioFrames.Time(), _audioFrames.Size(),
+					_videoPackets.Time(), _videoPackets.Size(), _videoFrames.Time(), _videoFrames.Size());
 				va_list list;
 				va_start(list, format);
 				vfprintf(file, format, list);
@@ -317,6 +335,7 @@ namespace pioneer
 		static int AudioThread(void* param)
         {
             Desc* desc = (Desc*)param;
+			double timebase = desc->_audioStream->time_base.num / (double)desc->_audioStream->time_base.den;
             AVFrame* frame = NULL;
             while (desc->_impl->_looping)
             {
@@ -351,8 +370,9 @@ namespace pioneer
                             error(desc, -303);
                         break;
                     }
+					double time = frame->pts * timebase;
                     double duration = frame->nb_samples / (double)frame->sample_rate;
-                    desc->_audioFrames.Enqueue(frame, duration);
+                    desc->_audioFrames.Enqueue(frame, time, duration);
                     frame = NULL;
                 }
             }
@@ -403,8 +423,9 @@ namespace pioneer
                             error(desc, -203);
                         break;
                     }
+					double time = frame->pts * timebase;
 					double duration = frame->pkt_duration * timebase;
-					desc->_videoFrames.Enqueue(frame, duration);
+					desc->_videoFrames.Enqueue(frame, time, duration);
 					frame = NULL;
 				}
 			}
@@ -420,6 +441,8 @@ namespace pioneer
 		static int DemuxThread(void* param)
 		{
 			Desc* desc = (Desc*)param;
+			double audioTimebase = desc->_audioStream->time_base.num / (double)desc->_audioStream->time_base.den;
+			double videoTimebase = desc->_videoStream->time_base.num / (double)desc->_videoStream->time_base.den;
 			while (desc->_impl->_looping)
 			{
 				if (desc->_eof || (desc->_impl->_state != Buffering && desc->_impl->_state != Playing))
@@ -443,13 +466,15 @@ namespace pioneer
 				{
 					if (desc->_audioStream && packet->stream_index == desc->_audioStream->index)
 					{
+						double time = packet->pts * audioTimebase;
 						double duration = packet->duration * desc->_audioStream->time_base.num / (double)desc->_audioStream->time_base.den;
-						desc->_audioPackets.Enqueue(packet, duration);
+						desc->_audioPackets.Enqueue(packet, time, duration);
 					}
 					else if (desc->_videoStream && packet->stream_index == desc->_videoStream->index)
 					{
+						double time = packet->pts * videoTimebase;
 						double duration = packet->duration * desc->_videoStream->time_base.num / (double)desc->_videoStream->time_base.den;
-						desc->_videoPackets.Enqueue(packet, duration);
+						desc->_videoPackets.Enqueue(packet, time, duration);
 					}
 					packet = NULL;
 				}
@@ -567,6 +592,16 @@ namespace pioneer
 				if (desc._renderTexture == NULL && error(&desc, -16))
 					goto end;
 			}
+
+			if (desc._videoStream)
+			{
+				double seekto = 1.0;
+				long long ts = seekto * desc._videoStream->time_base.den / desc._videoStream->time_base.num;
+				if (av_seek_frame(desc._demuxFormatCtx, desc._videoStream->index, ts, 0) != 0 && error(&desc, -18))
+					goto end;
+				desc._impl->_time = seekto;
+			}
+
 			if ((desc._demuxThread = SDL_CreateThread(DemuxThread, "DemuxThread", &desc)) == NULL && error(&desc, -14))
 				goto end;
 			if (desc._audioStream && (desc._audioThread = SDL_CreateThread(AudioThread, "AudioThread", &desc)) == NULL && error(&desc, -15))
@@ -575,6 +610,7 @@ namespace pioneer
 				goto end;
 			if (desc._videoStream && (desc._renderThread = SDL_CreateThread(RenderThread, "RenderThread", &desc)) == NULL && error(&desc, -17))
 				goto end;
+
 			desc.swstate(Playing);
 			while (desc._impl->_looping)
             {
@@ -596,7 +632,7 @@ namespace pioneer
 							
 							double newtime = desc._impl->_time - 1.0;
 							if (newtime < 0) newtime = 0;
-							long long ts = newtime / (desc._videoStream->time_base.num / (double)desc._videoStream->time_base.den);
+							long long ts = (long long)(newtime / (desc._videoStream->time_base.num / (double)desc._videoStream->time_base.den));
 							int ret = av_seek_frame(desc._demuxFormatCtx, desc._videoStream->index, ts, 0);
 							if (ret != 0)
 								break;
