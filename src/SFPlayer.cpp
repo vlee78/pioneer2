@@ -601,7 +601,7 @@ namespace pioneer
 			{
 				double seekto = 1.0;
 				long long ts = seekto * desc._videoStream->time_base.den / desc._videoStream->time_base.num;
-				if (av_seek_frame(desc._demuxFormatCtx, desc._videoStream->index, ts, 0) != 0 && error(&desc, -18))
+				if (av_seek_frame(desc._demuxFormatCtx, desc._videoStream->index, ts, AVSEEK_FLAG_ANY) != 0 && error(&desc, -18))
 					goto end;
 				desc._impl->_time = seekto;
 			}
