@@ -88,15 +88,22 @@ namespace pioneer
 			SDL_UnlockMutex(_mutex);
 		}
 
-		double Time()
+		double Head()
 		{
 			SDL_LockMutex(_mutex);
 			double time = 0;
 			if (_times.size() > 0)
-			{
 				time = _times.front();
-				if (time < 0) time = 0;
-			}
+			SDL_UnlockMutex(_mutex);
+			return time;
+		}
+
+		double Tail()
+		{
+			SDL_LockMutex(_mutex);
+			double time = 0;
+			if (_times.size() > 0)
+				time = _times.back() + _durations.back();
 			SDL_UnlockMutex(_mutex);
 			return time;
 		}
@@ -106,10 +113,7 @@ namespace pioneer
 			SDL_LockMutex(_mutex);
 			double duration = 0;
 			if (_times.size() > 0)
-			{
 				duration = _times.back() + _durations.back() - _times.front();
-				if (duration < 0) duration = 0;
-			}
 			SDL_UnlockMutex(_mutex);
 			return duration;
 		}
@@ -160,12 +164,12 @@ namespace pioneer
 					file = fopen("log.txt", "wb");
 				static long long lastTs = std::chrono::high_resolution_clock::now().time_since_epoch().count();
 				double time = (std::chrono::high_resolution_clock::now().time_since_epoch().count() - lastTs) / (double)1000000000;
-				fprintf(file, "[(%.3fs,%.3fs) A[%.3f(%d),%.3f(%d)] V[%.3f(%d),%.3f(%d)]]: ", time, _impl->_time, 
-					_audioPackets.Time(), _audioPackets.Size(), _audioFrames.Time(), _audioFrames.Size(), 
-					_videoPackets.Time(), _videoPackets.Size(), _videoFrames.Time(), _videoFrames.Size());
-				printf("[(%.3fs,%.3fs) A[%.3f(%d),%.3f(%d)] V[%.3f(%d),%.3f(%d)]]: ", time, _impl->_time,
-					_audioPackets.Time(), _audioPackets.Size(), _audioFrames.Time(), _audioFrames.Size(),
-					_videoPackets.Time(), _videoPackets.Size(), _videoFrames.Time(), _videoFrames.Size());
+				fprintf(file, "(%.3f, %.3f) A:[%.3f, %.3f] V:[%.3f, %.3f] a:[%.3f, %.3f] v:[%.3f, %.3f] \n", time, _impl->_time, 
+					_audioFrames.Head(), _audioFrames.Tail(), _videoFrames.Head(), _videoFrames.Tail(),
+					_audioPackets.Head(), _audioPackets.Tail(), _videoPackets.Head(), _videoPackets.Tail());
+				printf("(%.3f, %.3f) A:[%.3f, %.3f] V:[%.3f, %.3f] a:[%.3f, %.3f] v:[%.3f, %.3f] \n", time, _impl->_time,
+					_audioFrames.Head(), _audioFrames.Tail(), _videoFrames.Head(), _videoFrames.Tail(),
+					_audioPackets.Head(), _audioPackets.Tail(), _videoPackets.Head(), _videoPackets.Tail());
 				va_list list;
 				va_start(list, format);
 				vfprintf(file, format, list);
