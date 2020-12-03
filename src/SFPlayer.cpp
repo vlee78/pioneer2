@@ -441,6 +441,22 @@ namespace pioneer
 			}
 			return 0;
 		}
+
+		static std::string PacketFlagDesc(int flag)
+		{
+			std::string res;
+			if (flag & AV_PKT_FLAG_KEY)
+				res += "KEY|";
+			if (flag & AV_PKT_FLAG_CORRUPT)
+				res += "CORRUPT|";
+			if (flag & AV_PKT_FLAG_DISCARD)
+				res += "DISCARD|";
+			if (flag & AV_PKT_FLAG_TRUSTED)
+				res += "TRUSTED|";
+			if (flag & AV_PKT_FLAG_DISPOSABLE)
+				res += "DISPOSABLE";
+			return res;
+		}
         
 		static int DemuxThread(void* param)
 		{
@@ -473,12 +489,14 @@ namespace pioneer
 						double time = packet->pts * audioTimebase;
 						double duration = packet->duration * desc->_audioStream->time_base.num / (double)desc->_audioStream->time_base.den;
 						desc->_audioPackets.Enqueue(packet, time, duration);
+						desc->log("\t\tDemux: Audio: time = %.3f (%.3f) %.3f, pts:%lld\n", time, duration, time + duration, packet->pts);
 					}
 					else if (desc->_videoStream && packet->stream_index == desc->_videoStream->index)
 					{
 						double time = packet->pts * videoTimebase;
 						double duration = packet->duration * desc->_videoStream->time_base.num / (double)desc->_videoStream->time_base.den;
 						desc->_videoPackets.Enqueue(packet, time, duration);
+						desc->log("\tDemux: Video: time = %.3f (%.3f) %.3f, pts:%lld %s\n", time, duration, time + duration, packet->pts, PacketFlagDesc(packet->flags).c_str());
 					}
 					packet = NULL;
 				}
@@ -596,16 +614,29 @@ namespace pioneer
 				if (desc._renderTexture == NULL && error(&desc, -16))
 					goto end;
 			}
-
+/*
 			if (desc._videoStream)
 			{
-				double seekto = 1.0;
+				double seekto = 0.9;
 				long long ts = seekto * desc._videoStream->time_base.den / desc._videoStream->time_base.num;
-				if (av_seek_frame(desc._demuxFormatCtx, desc._videoStream->index, ts, AVSEEK_FLAG_ANY) != 0 && error(&desc, -18))
+				ts = 642;
+				if (av_seek_frame(desc._demuxFormatCtx, desc._videoStream->index, ts, 0) != 0 && error(&desc, -18))
+				//if (av_seek_frame(desc._demuxFormatCtx, desc._videoStream->index, ts, AVSEEK_FLAG_BACKWARD) != 0 && error(&desc, -18))
 					goto end;
 				desc._impl->_time = seekto;
 			}
-
+*/
+/*
+			if (desc._audioStream)
+			{
+				double seekto = 0.9;
+				long long ts = seekto * desc._audioStream->time_base.den / desc._audioStream->time_base.num;
+				
+				if (av_seek_frame(desc._demuxFormatCtx, desc._audioStream->index, ts, AVSEEK_FLAG_BACKWARD) != 0 && error(&desc, -18))
+					goto end;
+				desc._impl->_time = seekto;
+			}
+*/
 			if ((desc._demuxThread = SDL_CreateThread(DemuxThread, "DemuxThread", &desc)) == NULL && error(&desc, -14))
 				goto end;
 			if (desc._audioStream && (desc._audioThread = SDL_CreateThread(AudioThread, "AudioThread", &desc)) == NULL && error(&desc, -15))
