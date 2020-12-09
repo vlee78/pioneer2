@@ -490,6 +490,7 @@ namespace pioneer
 						double duration = packet->duration * desc->_audioStream->time_base.num / (double)desc->_audioStream->time_base.den;
 						desc->_audioPackets.Enqueue(packet, time, duration);
 						desc->log("\t\tDemux: Audio: time = %.3f (%.3f) %.3f, pts:%lld\n", time, duration, time + duration, packet->pts);
+						packet = NULL;
 					}
 					else if (desc->_videoStream && packet->stream_index == desc->_videoStream->index)
 					{
@@ -497,8 +498,8 @@ namespace pioneer
 						double duration = packet->duration * desc->_videoStream->time_base.num / (double)desc->_videoStream->time_base.den;
 						desc->_videoPackets.Enqueue(packet, time, duration);
 						desc->log("\tDemux: Video: time = %.3f (%.3f) %.3f, pts:%lld %s\n", time, duration, time + duration, packet->pts, PacketFlagDesc(packet->flags).c_str());
+						packet = NULL;
 					}
-					packet = NULL;
 				}
 				else if (ret == AVERROR_EOF)
 				{
@@ -525,6 +526,131 @@ namespace pioneer
             desc->_impl->_looping = false;
             return true;
         }
+
+		static long long Seek(Desc* desc, AVStream* stream, double seekto)
+		{
+			if (desc->_videoStream != NULL)
+			{
+				long long timestamp = seekto * desc->_videoStream->time_base.den / desc->_videoStream->time_base.num;
+				PtrQueue audioQueue;
+				PtrQueue videoQueue;
+				long long video_key_pts = -1;
+				long long video_min_pts = -1;
+				long long errorCode = 0;
+				long seekts = timestamp;
+				bool eof = false;
+				while (true)
+				{
+					if (seekts >= 0)
+					{
+						for (AVPacket* packet = (AVPacket*)audioQueue.Dequeue(); packet != NULL; av_packet_unref(packet), av_packet_free(&packet), packet = (AVPacket*)audioQueue.Dequeue());
+						for (AVPacket* packet = (AVPacket*)videoQueue.Dequeue(); packet != NULL; av_packet_unref(packet), av_packet_free(&packet), packet = (AVPacket*)videoQueue.Dequeue());
+						if (av_seek_frame(desc->_demuxFormatCtx, desc->_videoStream->index, seekts, AVSEEK_FLAG_BACKWARD) != 0)
+						{
+							errorCode = -1;
+							break;
+						}
+						seekts = -1;
+					}
+					AVPacket* packet = av_packet_alloc();
+					if (packet == NULL)
+						return -2;
+					int ret = av_read_frame(desc->_demuxFormatCtx, packet);
+					if (ret == 0)
+					{
+						if (desc->_audioStream && packet->stream_index == desc->_audioStream->index)
+						{
+							audioQueue.Enqueue(packet, 0, 0);
+							packet = NULL;
+						}
+						else if (desc->_videoStream && packet->stream_index == desc->_videoStream->index)
+						{
+							if (video_key_pts == -1 && packet->flags & AV_PKT_FLAG_KEY)
+								video_key_pts = packet->pts;
+							if (video_min_pts == -1 || packet->pts < video_min_pts)
+								video_min_pts = packet->pts;
+							videoQueue.Enqueue(packet, 0, 0);
+							packet = NULL;
+						}
+					}
+					else if (ret == AVERROR_EOF)
+					{
+						eof = true;
+					}
+					else
+					{
+						errorCode = -4;
+						break;
+					}
+					if (packet != NULL)
+					{
+						av_packet_unref(packet);
+						av_packet_free(&packet);
+						packet = NULL;
+					}
+
+
+					if (video_key_pts >= 0)
+					{
+						if (video_key_pts <= timestamp)
+							break;
+						else if (eof || videoQueue.Size() > 10)
+						{
+							if (video_min_pts > timestamp)
+							{
+								errorCode = -2;
+								break;
+							}
+							seekts = video_min_pts - 1;
+							eof = false;
+							if (seekts < 0)
+							{
+								errorCode = -3;
+								break;
+							}
+						}
+					}
+					if (eof)
+					{
+						errorCode = -5;
+						break;
+					}
+				}
+
+				if (errorCode != 0)
+				{
+					for (AVPacket* packet = (AVPacket*)audioQueue.Dequeue(); packet != NULL; av_packet_unref(packet), av_packet_free(&packet), packet = (AVPacket*)audioQueue.Dequeue());
+					for (AVPacket* packet = (AVPacket*)videoQueue.Dequeue(); packet != NULL; av_packet_unref(packet), av_packet_free(&packet), packet = (AVPacket*)videoQueue.Dequeue());
+					return errorCode;
+				}
+
+
+				for (AVPacket* packet = (AVPacket*)audioQueue.Dequeue(); packet != NULL; packet = (AVPacket*)audioQueue.Dequeue())
+				{
+					av_packet_unref(packet);
+					av_packet_free(&packet);
+				}
+				for (AVPacket* packet = (AVPacket*)videoQueue.Dequeue(); packet != NULL; av_packet_unref(packet), av_packet_free(&packet), packet = (AVPacket*)videoQueue.Dequeue());
+
+			}
+			else
+			{
+
+			}
+
+
+
+			return 0;
+
+
+			//if (av_seek_frame(desc._demuxFormatCtx, desc._videoStream->index, ts, 0) != 0 && error(&desc, -18))
+				//if (av_seek_frame(desc._demuxFormatCtx, desc._videoStream->index, ts, AVSEEK_FLAG_BACKWARD) != 0 && error(&desc, -18))
+			//	goto end;
+			//desc._impl->_time = seekto;
+
+
+			return 0;
+		}
         
         static int MainThread(void* param)
         {
