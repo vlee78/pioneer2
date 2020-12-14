@@ -555,7 +555,7 @@ namespace pioneer
 						}
 						if (av_seek_frame(desc->_demuxFormatCtx, desc->_videoStream->index, seekts, AVSEEK_FLAG_BACKWARD) != 0)
 						{
-							errorCode = -1;
+							errorCode = -2;
 							break;
 						}
 						lastseek = seekts;
@@ -564,7 +564,7 @@ namespace pioneer
 					packet = av_packet_alloc();
 					if (packet == NULL)
 					{
-						errorCode = -2;
+						errorCode = -3;
 						break;
 					}
 					bool hit = false;
@@ -596,7 +596,7 @@ namespace pioneer
 					{
 						if (video_key_pts == -1)
 						{
-							errorCode = -1;
+							errorCode = -4;
 							break;
 						}
 						hit = true;
@@ -616,7 +616,7 @@ namespace pioneer
 					{
 						if (video_key_pts < 0)
 						{
-							errorCode = -1;
+							errorCode = -5;
 							break;
 						}
 						if (video_key_pts <= timestamp)
@@ -640,54 +640,46 @@ namespace pioneer
 				if (desc->_audioStream)
 				{
 					double audioTimebase = desc->_audioStream->time_base.num / (double)desc->_audioStream->time_base.den;
-					double time = packet->pts * audioTimebase;
-					double duration = packet->duration * desc->_audioStream->time_base.num / (double)desc->_audioStream->time_base.den;
-
-				}
-				for (AVPacket* packet = (AVPacket*)audioQueue.Dequeue(); packet != NULL; packet = (AVPacket*)audioQueue.Dequeue())
-				{
-					
-					if (desc->_audioStream && packet->stream_index == desc->_audioStream->index)
+					for (AVPacket* packet = (AVPacket*)audioQueue.Dequeue(); packet != NULL; packet = (AVPacket*)audioQueue.Dequeue())
 					{
 						double time = packet->pts * audioTimebase;
-						double duration = packet->duration * desc->_audioStream->time_base.num / (double)desc->_audioStream->time_base.den;
-						desc->_audioPackets.Enqueue(packet, time, duration);
-						desc->log("\t\tDemux: Audio: time = %.3f (%.3f) %.3f, pts:%lld\n", time, duration, time + duration, packet->pts);
-						packet = NULL;
+						if (time < seekto)
+						{
+							av_packet_unref(packet);
+							av_packet_free(&packet);
+							packet = NULL;
+						}
+						else
+						{
+							double duration = packet->duration * desc->_audioStream->time_base.num / (double)desc->_audioStream->time_base.den;
+							desc->_audioPackets.Enqueue(packet, time, duration);
+						}
 					}
-					else if (desc->_videoStream && packet->stream_index == desc->_videoStream->index)
+				}
+				if (desc->_videoStream)
+				{
+					double videoTimebase = desc->_videoStream->time_base.num / (double)desc->_audioStream->time_base.den;
+					for (AVPacket* packet = (AVPacket*)desc->_videoPackets.Dequeue(); packet != NULL; packet = (AVPacket*)desc->_videoPackets.Dequeue())
 					{
 						double time = packet->pts * videoTimebase;
-						double duration = packet->duration * desc->_videoStream->time_base.num / (double)desc->_videoStream->time_base.den;
-						desc->_videoPackets.Enqueue(packet, time, duration);
-						desc->log("\tDemux: Video: time = %.3f (%.3f) %.3f, pts:%lld %s\n", time, duration, time + duration, packet->pts, PacketFlagDesc(packet->flags).c_str());
-						packet = NULL;
+						if (time < seekto)
+						{
+							av_packet_unref(packet);
+							av_packet_free(&packet);
+							packet = NULL;
+						}
+						else
+						{
+							double duration = packet->duration * desc->_audioStream->time_base.num / (double)desc->_audioStream->time_base.den;
+							desc->_videoPackets.Enqueue(packet, time, duration);
+						}
 					}
-
-
-
-					av_packet_unref(packet);
-					av_packet_free(&packet);
 				}
-				for (AVPacket* packet = (AVPacket*)videoQueue.Dequeue(); packet != NULL; av_packet_unref(packet), av_packet_free(&packet), packet = (AVPacket*)videoQueue.Dequeue());
-
 			}
-			else
+			else if (desc->_audioStream)
 			{
 
 			}
-
-
-
-			return 0;
-
-
-			//if (av_seek_frame(desc._demuxFormatCtx, desc._videoStream->index, ts, 0) != 0 && error(&desc, -18))
-				//if (av_seek_frame(desc._demuxFormatCtx, desc._videoStream->index, ts, AVSEEK_FLAG_BACKWARD) != 0 && error(&desc, -18))
-			//	goto end;
-			//desc._impl->_time = seekto;
-
-
 			return 0;
 		}
         
@@ -779,18 +771,15 @@ namespace pioneer
 				if (desc._renderTexture == NULL && error(&desc, -16))
 					goto end;
 			}
-/*
+
 			if (desc._videoStream)
 			{
 				double seekto = 0.9;
-				long long ts = seekto * desc._videoStream->time_base.den / desc._videoStream->time_base.num;
-				ts = 642;
-				if (av_seek_frame(desc._demuxFormatCtx, desc._videoStream->index, ts, 0) != 0 && error(&desc, -18))
-				//if (av_seek_frame(desc._demuxFormatCtx, desc._videoStream->index, ts, AVSEEK_FLAG_BACKWARD) != 0 && error(&desc, -18))
+				if (Seek(&desc, desc._videoStream, seekto) != 0 && error(&desc, -17))
 					goto end;
 				desc._impl->_time = seekto;
 			}
-*/
+
 /*
 			if (desc._audioStream)
 			{
