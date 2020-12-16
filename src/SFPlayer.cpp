@@ -197,16 +197,23 @@ namespace pioneer
 			memset(stream, 0, len);
 			if (desc->_impl->_looping == false || desc->_impl->_state != Playing)
 				return;
-            short* buffer0 = ((short*)stream) + 0;
-            short* buffer1 = ((short*)stream) + 1;
-            int bufchs = 2;
-            int bufoff = 0;
-            int bufmax = len / sizeof(short);
-            while(true)
+			if (desc->_impl->_time < desc->_audioFrames.Head())
+			{
+				double shift = len / 2 / (double)desc->_audioCodecCtx->sample_rate;
+				desc->_impl->_time += shift;
+				desc->_impl->_ts = 0;
+				return;
+			}
+			short* buffer0 = ((short*)stream) + 0;
+			short* buffer1 = ((short*)stream) + 1;
+			int bufchs = 2;
+			int bufoff = 0;
+			int bufmax = len / sizeof(short);
+			while(true)
             {
                 AVFrame* frame = (AVFrame*)desc->_audioFrames.PeekFront();
 				if (frame == NULL)
-					return;
+					break;
                 AVSampleFormat format = (AVSampleFormat)frame->format;
 				double time = frame->pts * desc->_audioTimebase;
                 int sampleRate = frame->sample_rate;
@@ -283,7 +290,7 @@ namespace pioneer
                     return;
                 }
             }
-            int samples = bufmax / bufchs;
+            int samples = bufoff / bufchs;
             double shift = samples / (double)desc->_audioCodecCtx->sample_rate;
             desc->_impl->_time += shift;
             desc->_impl->_ts = 0;
