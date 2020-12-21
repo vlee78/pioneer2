@@ -16,6 +16,10 @@ extern "C"
 	#include "libavutil/opt.h"
 }
 
+#define DEMUX_SATURATE 2.5//A或V的packet队列达到2.5秒的话，暂停demux
+#define AUDIO_SATURATE 2.5//A的frame队列达到2.5秒的话，暂停audio
+#define VIDEO_SATURATE 2.5//V的frame队列达到2.5秒的话，暂停video
+
 namespace pioneer
 {
     static const char* StateNames[] =
@@ -354,10 +358,10 @@ namespace pioneer
             {
                 AVPacket* packet = NULL;
                 if ((desc->_impl->_state != Buffering && desc->_impl->_state != Playing) ||
-                    (desc->_audioFrames.Duration() > 2.0) ||
+                    (desc->_audioFrames.Duration() > AUDIO_SATURATE) ||
                     (packet = (AVPacket*)desc->_audioPackets.Dequeue()) == NULL)
                 {
-                    SDL_Delay(100);
+                    SDL_Delay(0);
                     continue;
                 }
                 int ret = avcodec_send_packet(desc->_audioCodecCtx, packet);
@@ -385,7 +389,7 @@ namespace pioneer
                     }
 					double time = frame->pts * desc->_audioTimebase;
 					if (time >= desc->_impl->_time)
-					{
+					{//解压包时间戳小于当前指示时间，
 						double duration = frame->nb_samples / (double)frame->sample_rate;
 						desc->_audioFrames.Enqueue(frame, time, duration);
 					}
@@ -489,12 +493,14 @@ namespace pioneer
 			{
 				if (desc->_eof || (desc->_impl->_state != Buffering && desc->_impl->_state != Playing))
 				{
-					SDL_Delay(100);
+					SDL_Delay(0);
 					continue;
 				}
-				if ((desc->_videoStream && desc->_videoPackets.Duration() >= 2.5) || (desc->_audioStream && desc->_audioPackets.Duration() >= 2.5))
-				{
-					SDL_Delay(100);
+				if ((desc->_videoStream && desc->_videoPackets.Duration() >= DEMUX_SATURATE) || 
+					(desc->_audioStream && desc->_audioPackets.Duration() >= DEMUX_SATURATE))
+				{//demux的控制threshold:A或Vpacket队列超过2.5秒就停止demux，考虑到A和V在box里头不对齐的程度
+				 //test.mov:A比V快0.929秒,之后保持a和v同步前进但始终差距大约0.929
+					SDL_Delay(0);
 					continue;
 				}
 				AVPacket* packet = av_packet_alloc();
@@ -747,9 +753,9 @@ namespace pioneer
 
 			if (desc._videoStream)
 			{
-				double seekto = 4.0;
-				if (Seek(&desc, seekto) != 0 && error(&desc, -17))
-					goto end;
+//				double seekto = 4.0;
+//				if (Seek(&desc, seekto) != 0 && error(&desc, -17))
+//					goto end;
 			}
 			
 			if ((desc._demuxThread = SDL_CreateThread(DemuxThread, "DemuxThread", &desc)) == NULL && error(&desc, -14))
