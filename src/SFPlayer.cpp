@@ -16,9 +16,10 @@ extern "C"
 	#include "libavutil/opt.h"
 }
 
-#define DEMUX_SATURATE 2.5//A或V的packet队列达到2.5秒的话，暂停demux
-#define AUDIO_SATURATE 2.5//A的frame队列达到2.5秒的话，暂停audio
-#define VIDEO_SATURATE 2.5//V的frame队列达到2.5秒的话，暂停video
+#define DEMUX_SATURATE 5//A和V的packet队列尾同时大于time+DEMUX_SATURATE的话，暂停demux
+#define AUDIO_SATURATE 5//A的frame队列尾大于time+AUDIO_SATURATE的话，暂停audio解码
+#define VIDEO_SATURATE 5//V的frame队列尾大于time+VIDEO_SATURATE的话，暂停video解码
+#define RENDER_BUFFERED 4//A和V的frame队列尾大于time+RENDER_BUFFERED的话，从buffering开始playing
 
 namespace pioneer
 {
@@ -201,12 +202,19 @@ namespace pioneer
 			memset(stream, 0, len);
 			if (desc->_impl->_looping == false || desc->_impl->_state != Playing)
 				return;
-			if (desc->_impl->_time < desc->_audioFrames.Head())
-			{
-				double shift = len / 2 / (double)desc->_audioCodecCtx->sample_rate;
-				desc->_impl->_time += shift;
-				desc->_impl->_ts = 0;
-				return;
+			{//计算
+				AVFrame* frame = (AVFrame*)desc->_audioFrames.PeekFront();
+				if (frame == NULL)
+					return;
+				int sampleRate = desc->_audioCodecCtx->sample_rate;
+				double head = desc->_audioFrames.Head() + frame->width / (double)sampleRate + 0.00000001;
+				if (desc->_impl->_time < head)
+				{
+					double shift = len / 2 / (double)sampleRate;
+					desc->_impl->_time += shift;
+					desc->_impl->_ts = 0;
+					return;
+				}
 			}
 			short* buffer0 = ((short*)stream) + 0;
 			short* buffer1 = ((short*)stream) + 1;
@@ -274,16 +282,16 @@ namespace pioneer
                         desc->_impl->_looping = false;
                         return;
                     }
-                    frame->width = frameoff;
-                    if (frameoff >= framemax)
-                    {
+                    frame->width = frameoff;//保存这次frame读到这里
+					if (frameoff >= framemax)
+                    {//本frame数据已经用完，dequeue和用下一frame填充输出
                         frame = (AVFrame*)desc->_audioFrames.Dequeue();
                         av_frame_unref(frame);
                         av_frame_free(&frame);
                         frame = NULL;
                     }
                     if (bufoff >= bufmax)
-                    {
+                    {//填满数据了,更新audioFrames的Head包含偏移
                         break;
                     }
                 }
@@ -357,8 +365,9 @@ namespace pioneer
             while (desc->_impl->_looping)
             {
                 AVPacket* packet = NULL;
+				double endtime = desc->_impl->_time + AUDIO_SATURATE;
                 if ((desc->_impl->_state != Buffering && desc->_impl->_state != Playing) ||
-                    (desc->_audioFrames.Duration() > AUDIO_SATURATE) ||
+                    (desc->_audioFrames.Tail() >= endtime ) ||
                     (packet = (AVPacket*)desc->_audioPackets.Dequeue()) == NULL)
                 {
                     SDL_Delay(0);
@@ -391,10 +400,11 @@ namespace pioneer
 					if (time >= desc->_impl->_time)
 					{//解压包时间戳小于当前指示时间，
 						double duration = frame->nb_samples / (double)frame->sample_rate;
+						frame->width = 0;
 						desc->_audioFrames.Enqueue(frame, time, duration);
 					}
 					else
-					{
+					{//丢掉
 						av_frame_unref(frame);
 						av_frame_free(&frame);
 					}
@@ -417,11 +427,12 @@ namespace pioneer
 			while (desc->_impl->_looping)
 			{
                 AVPacket* packet = NULL;
+				double endtime = desc->_impl->_time + VIDEO_SATURATE;
 				if ((desc->_impl->_state != Buffering && desc->_impl->_state != Playing) ||
-                    (desc->_videoFrames.Duration() > 2.0) ||
+                    (desc->_videoFrames.Tail() >= endtime ) ||
                     (packet = (AVPacket*)desc->_videoPackets.Dequeue()) == NULL)
 				{
-					SDL_Delay(100);
+					SDL_Delay(0);
 					continue;
 				}
 				int ret = avcodec_send_packet(desc->_videoCodecCtx, packet);
@@ -496,10 +507,11 @@ namespace pioneer
 					SDL_Delay(0);
 					continue;
 				}
-				if ((desc->_videoStream && desc->_videoPackets.Duration() >= DEMUX_SATURATE) || 
-					(desc->_audioStream && desc->_audioPackets.Duration() >= DEMUX_SATURATE))
-				{//demux的控制threshold:A或Vpacket队列超过2.5秒就停止demux，考虑到A和V在box里头不对齐的程度
-				 //test.mov:A比V快0.929秒,之后保持a和v同步前进但始终差距大约0.929
+				double endtime = desc->_impl->_time + DEMUX_SATURATE;
+				if ((desc->_videoStream != NULL && desc->_audioStream != NULL && desc->_videoPackets.Tail() >= endtime && desc->_audioPackets.Tail() > endtime) ||
+					(desc->_audioStream != NULL && desc->_audioPackets.Tail() >= endtime) ||
+					(desc->_videoStream != NULL && desc->_videoPackets.Tail() >= endtime))
+				{
 					SDL_Delay(0);
 					continue;
 				}
@@ -835,9 +847,10 @@ namespace pioneer
                 }
 				else if (desc._impl->_state == Buffering)
 				{
-					if ((desc._audioStream != NULL && desc._videoStream != NULL && desc._audioFrames.Duration() > 2.0 && desc._videoFrames.Duration() > 2.0) ||
-						(desc._audioStream != NULL && desc._videoStream == NULL && desc._audioFrames.Duration() > 2.0) || 
-						(desc._audioStream == NULL && desc._videoStream != NULL && desc._videoFrames.Duration() > 2.0))
+					double endtime = desc._impl->_time + RENDER_BUFFERED;
+					if ((desc._audioStream != NULL && desc._videoStream != NULL && desc._audioFrames.Tail() >= endtime && desc._videoFrames.Tail() >= endtime) ||
+						(desc._audioStream != NULL && desc._videoStream == NULL && desc._audioFrames.Tail() >= endtime)||
+						(desc._audioStream == NULL && desc._videoStream != NULL && desc._videoFrames.Tail() >= endtime))
 					{
 						desc.swstate(Playing);
 						continue;
