@@ -31,102 +31,191 @@ namespace pioneer
         "Playing(3)",
     };
 
-	class PtrQueue
+	class PacketQueue
 	{
 	public:
-		PtrQueue()
+		SDL_mutex* _mutex;
+		std::list<AVPacket*> _queue;
+
+		PacketQueue()
 		{
 			_mutex = SDL_CreateMutex();
-			_list.clear();
-			_times.clear();
-			_durations.clear();
 		}
 
-		~PtrQueue()
+		~PacketQueue()
 		{
+			Clear();
 			SDL_DestroyMutex(_mutex);
-			_mutex = NULL;
-			_list.clear();
-			_times.clear();
-			_durations.clear();
+		}
+
+		void Clear()
+		{
+			SDL_LockMutex(_mutex);
+			for (auto it = _queue.begin(); it != _queue.end(); it++)
+			{
+				AVPacket* packet= *it;
+				av_packet_unref(packet);
+				av_packet_free(&packet);
+			}
+			_queue.clear();
+			SDL_UnlockMutex(_mutex);
 		}
 
 		int Size()
 		{
 			SDL_LockMutex(_mutex);
-			int size = (int)_list.size();
+			int size = (int)_queue.size();
 			SDL_UnlockMutex(_mutex);
 			return size;
 		}
 
-		void* PeekFront()
+		AVPacket* Dequeue()
 		{
 			SDL_LockMutex(_mutex);
-			void* ptr = NULL;
-			if (_list.size() > 0)
-				ptr = _list.front();
-			SDL_UnlockMutex(_mutex);
-			return ptr;
-		}
-
-		void* Dequeue()
-		{
-			SDL_LockMutex(_mutex);
-			void* ptr = NULL;
-			if (_list.size() > 0)
+			AVPacket* packet = NULL;
+			if (_queue.size() > 0)
 			{
-				ptr = _list.front();
-				_list.pop_front();
-				_times.pop_front();
-				_durations.pop_front();
+				packet = _queue.front();
+				_queue.pop_front();
 			}
 			SDL_UnlockMutex(_mutex);
-			return ptr;
+			return packet;
 		}
 
-		void Enqueue(void* ptr, double time, double duration)
+		void Enqueue(AVPacket* packet)
 		{
 			SDL_LockMutex(_mutex);
-			_list.push_back(ptr);
-			_times.push_back(time);
-			_durations.push_back(duration);
+			_queue.push_back(packet);
 			SDL_UnlockMutex(_mutex);
 		}
 
-		double Head()
+		long long Head()
 		{
 			SDL_LockMutex(_mutex);
-			double time = 0;
-			if (_times.size() > 0)
-				time = _times.front();
+			long long head = 0;
+			if (_queue.size() > 0)
+				head = _queue.front()->pts;
 			SDL_UnlockMutex(_mutex);
-			return time;
+			return head;
 		}
 
 		double Tail()
 		{
 			SDL_LockMutex(_mutex);
-			double time = 0;
-			if (_times.size() > 0)
-				time = _times.back() + _durations.back();
+			double tail = 0;
+			if (_queue.size() > 0)
+			{
+				AVPacket* packet = _queue.back();
+				tail = packet->pts + packet->duration;
+			}
 			SDL_UnlockMutex(_mutex);
-			return time;
+			return tail;
+		}
+	};
+
+	class FrameQueue
+	{
+	public:
+		SDL_mutex* _mutex;
+		std::list<AVFrame*> _queue;
+
+		FrameQueue()
+		{
+			_mutex = SDL_CreateMutex();
 		}
 
-		double Duration()
+		~FrameQueue()
+		{
+			Clear();
+			SDL_DestroyMutex(_mutex);
+		}
+
+		void Clear()
 		{
 			SDL_LockMutex(_mutex);
-			double duration = 0;
-			if (_times.size() > 0)
-				duration = _times.back() + _durations.back() - _times.front();
+			for (auto it = _queue.begin(); it != _queue.end(); it++)
+			{
+				AVFrame* frame = *it;
+				av_frame_unref(frame);
+				av_frame_free(&frame);
+			}
+			_queue.clear();
 			SDL_UnlockMutex(_mutex);
-			return duration;
 		}
 
-		SDL_mutex* _mutex;
-		std::list<void*> _list;
-		std::list<double> _times;
-		std::list<double> _durations;
+		int Size()
+		{
+			SDL_LockMutex(_mutex);
+			int size = (int)_queue.size();
+			SDL_UnlockMutex(_mutex);
+			return size;
+		}
+
+		AVFrame* PeekFront()
+		{
+			SDL_LockMutex(_mutex);
+			AVFrame* frame = NULL;
+			if (_queue.size() > 0)
+				frame = _queue.front();
+			SDL_UnlockMutex(_mutex);
+			return frame;
+		}
+
+		void PopFront()
+		{
+			SDL_LockMutex(_mutex);
+			if (_queue.size() > 0)
+			{
+				AVFrame* frame = _queue.front();
+				av_frame_unref(frame);
+				av_frame_free(&frame);
+				_queue.pop_front();
+			}
+			SDL_UnlockMutex(_mutex);
+		}
+
+		AVFrame* Dequeue()
+		{
+			SDL_LockMutex(_mutex);
+			AVFrame* frame = NULL;
+			if (_queue.size() > 0)
+			{
+				frame = _queue.front();
+				_queue.pop_front();
+			}
+			SDL_UnlockMutex(_mutex);
+			return frame;
+		}
+
+		void Enqueue(AVFrame* frame)
+		{
+			SDL_LockMutex(_mutex);
+			_queue.push_back(frame);
+			SDL_UnlockMutex(_mutex);
+		}
+
+		long long Head()
+		{
+			SDL_LockMutex(_mutex);
+			long long head = 0;
+			if (_queue.size() > 0)
+				head = _queue.front()->pts;
+			SDL_UnlockMutex(_mutex);
+			return head;
+		}
+
+		double Tail()
+		{
+			SDL_LockMutex(_mutex);
+			double tail = 0;
+			if (_queue.size() > 0)
+			{
+				AVFrame* frame = _queue.back();
+				tail = frame->pts + frame->pkt_duration;
+			}
+			SDL_UnlockMutex(_mutex);
+			return tail;
+		}
 	};
 
     class SFPlayer::SFPlayerImpl
@@ -148,13 +237,13 @@ namespace pioneer
 			AVCodecContext* _audioCodecCtx;
 			AVStream* _audioStream;
 			double _audioTimebase;
-            PtrQueue _audioPackets;
-            PtrQueue _audioFrames;
+            PacketQueue _audioPackets;
+            FrameQueue _audioFrames;
 			AVCodecContext* _videoCodecCtx;
 			AVStream* _videoStream;
 			double _videoTimebase;
-			PtrQueue _videoPackets;
-			PtrQueue _videoFrames;
+			PacketQueue _videoPackets;
+			FrameQueue _videoFrames;
 			bool _eof;
             SDL_Thread* _demuxThread;
             SDL_Thread* _audioThread;
@@ -202,20 +291,6 @@ namespace pioneer
 			memset(stream, 0, len);
 			if (desc->_impl->_looping == false || desc->_impl->_state != Playing)
 				return;
-			{//计算
-				AVFrame* frame = (AVFrame*)desc->_audioFrames.PeekFront();
-				if (frame == NULL)
-					return;
-				int sampleRate = desc->_audioCodecCtx->sample_rate;
-				double head = desc->_audioFrames.Head() + frame->width / (double)sampleRate + 0.00000001;
-				if (desc->_impl->_time < head)
-				{
-					double shift = len / 2 / (double)sampleRate;
-					desc->_impl->_time += shift;
-					desc->_impl->_ts = 0;
-					return;
-				}
-			}
 			short* buffer0 = ((short*)stream) + 0;
 			short* buffer1 = ((short*)stream) + 1;
 			int bufchs = 2;
@@ -282,18 +357,12 @@ namespace pioneer
                         desc->_impl->_looping = false;
                         return;
                     }
-                    frame->width = frameoff;//保存这次frame读到这里
+                    frame->width = frameoff;
+					frame->height = frameoff / sampleRate * desc->_audioStream->time_base.num / (sampleRate * desc->_audioStream->time_base.den);
 					if (frameoff >= framemax)
-                    {//本frame数据已经用完，dequeue和用下一frame填充输出
-                        frame = (AVFrame*)desc->_audioFrames.Dequeue();
-                        av_frame_unref(frame);
-                        av_frame_free(&frame);
-                        frame = NULL;
-                    }
+						desc->_audioFrames.PopFront();
                     if (bufoff >= bufmax)
-                    {//填满数据了,更新audioFrames的Head包含偏移
                         break;
-                    }
                 }
                 else
                 {
@@ -302,8 +371,9 @@ namespace pioneer
                     return;
                 }
             }
-            int samples = bufoff / bufchs;
-            double shift = samples / (double)desc->_audioCodecCtx->sample_rate;
+            long long samples = bufoff / bufchs;//总共消耗了frame queue多少sample
+			int sampleRate = desc->_audioCodecCtx->sample_rate;
+			long long shift = samples * desc->_audioStream->time_base.num / (sampleRate * desc->_audioStream->time_base.den);
             desc->_impl->_time += shift;
             desc->_impl->_ts = 0;
         }
