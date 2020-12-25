@@ -199,7 +199,10 @@ namespace pioneer
 			SDL_LockMutex(_mutex);
 			long long head = 0;
 			if (_queue.size() > 0)
-				head = _queue.front()->pts;
+			{
+				AVFrame* frame = _queue.front();
+				head = frame->pts + frame->height;
+			}
 			SDL_UnlockMutex(_mutex);
 			return head;
 		}
@@ -224,7 +227,7 @@ namespace pioneer
 		std::string _filename;
 		Flag _flag;
 		State _state;
-		double _time;
+		long long _time;
 		long long _ts;
 		bool _looping;
 		long long _errorCode;
@@ -236,14 +239,17 @@ namespace pioneer
 			AVFormatContext* _demuxFormatCtx;
 			AVCodecContext* _audioCodecCtx;
 			AVStream* _audioStream;
-			double _audioTimebase;
+			AVRational _audioTimebase;
             PacketQueue _audioPackets;
             FrameQueue _audioFrames;
 			AVCodecContext* _videoCodecCtx;
 			AVStream* _videoStream;
-			double _videoTimebase;
+			AVRational _videoTimebase;
 			PacketQueue _videoPackets;
 			FrameQueue _videoFrames;
+
+			AVRational _timebase;
+
 			bool _eof;
             SDL_Thread* _demuxThread;
             SDL_Thread* _audioThread;
@@ -291,6 +297,7 @@ namespace pioneer
 			memset(stream, 0, len);
 			if (desc->_impl->_looping == false || desc->_impl->_state != Playing)
 				return;
+			int sampleRate = desc->_audioCodecCtx->sample_rate;
 			short* buffer0 = ((short*)stream) + 0;
 			short* buffer1 = ((short*)stream) + 1;
 			int bufchs = 2;
@@ -303,9 +310,8 @@ namespace pioneer
 					break;
                 AVSampleFormat format = (AVSampleFormat)frame->format;
 				double time = frame->pts * desc->_audioTimebase;
-                int sampleRate = frame->sample_rate;
                 int channels = frame->channels;
-                if (sampleRate != desc->_audioCodecCtx->sample_rate)
+                if (sampleRate != frame->sample_rate)
                 {
                     desc->_impl->_errorCode = -201;
                     desc->_impl->_looping = false;
@@ -357,8 +363,8 @@ namespace pioneer
                         desc->_impl->_looping = false;
                         return;
                     }
-                    frame->width = frameoff;
-					frame->height = frameoff / sampleRate * desc->_audioStream->time_base.num / (sampleRate * desc->_audioStream->time_base.den);
+                    frame->width = frameoff;//音频帧内的已经读取输出的偏移,单位为frame
+					frame->height = (int)((long long)frameoff * sampleRate / desc->_audioStream->time_base.num / desc->_audioStream->time_base.den);//将帧内偏移转换为timebase
 					if (frameoff >= framemax)
 						desc->_audioFrames.PopFront();
                     if (bufoff >= bufmax)
@@ -372,8 +378,7 @@ namespace pioneer
                 }
             }
             long long samples = bufoff / bufchs;//总共消耗了frame queue多少sample
-			int sampleRate = desc->_audioCodecCtx->sample_rate;
-			long long shift = samples * desc->_audioStream->time_base.num / (sampleRate * desc->_audioStream->time_base.den);
+			long long shift = (long long)samples * sampleRate / desc->_audioStream->time_base.num / desc->_audioStream->time_base.den;
             desc->_impl->_time += shift;
             desc->_impl->_ts = 0;
         }
@@ -469,9 +474,9 @@ namespace pioneer
 					double time = frame->pts * desc->_audioTimebase;
 					if (time >= desc->_impl->_time)
 					{//解压包时间戳小于当前指示时间，
-						double duration = frame->nb_samples / (double)frame->sample_rate;
 						frame->width = 0;
-						desc->_audioFrames.Enqueue(frame, time, duration);
+						frame->height = 0;
+						desc->_audioFrames.Enqueue(frame);
 					}
 					else
 					{//丢掉
@@ -532,7 +537,7 @@ namespace pioneer
 					if (time >= desc->_impl->_time)
 					{
 						double duration = frame->pkt_duration * desc->_videoTimebase;
-						desc->_videoFrames.Enqueue(frame, time, duration);
+						desc->_videoFrames.Enqueue(frame);
 					}
 					else
 					{
@@ -566,7 +571,38 @@ namespace pioneer
 				res += "DISPOSABLE";
 			return res;
 		}
+
+		static long long SecondsToSamples(double seconds, int sampleRate)
+		{
+			return (long long)(seconds * sampleRate);
+		}
         
+		static long long SecondsToTimebase(double seconds, AVStream* stream)
+		{
+			return (long long)(seconds * stream->time_base.den / stream->time_base.num);
+		}
+
+		static int LCM(int a, int b)
+		{	
+			int na = a;
+			int nb = b;
+			if (nb) while ((na %= nb) && (nb %= na));
+			int gcd = na + nb;
+			return a * b / gcd;
+		}
+
+		static AVRational CommonTimebase(AVRational* audioTimebase, AVRational* videoTimebase)
+		{
+			AVRational res;
+			if (audioTimebase != NULL && videoTimebase != NULL)
+				res = { LCM(audioTimebase->num, videoTimebase->num), LCM(audioTimebase->den, videoTimebase->den) };
+			else if (audioTimebase != NULL)
+				res = { audioTimebase->num, audioTimebase->den };
+			else if (videoTimebase != NULL)
+				res = { videoTimebase->num, videoTimebase->den };
+			return res;
+		}
+
 		static int DemuxThread(void* param)
 		{
 			Desc* desc = (Desc*)param;
@@ -577,7 +613,8 @@ namespace pioneer
 					SDL_Delay(0);
 					continue;
 				}
-				double endtime = desc->_impl->_time + DEMUX_SATURATE;
+				//desc->_audioCodecCtx->sample_rate * DEMUX_SATURATE / (desc->_audioStream->time_base.num / desc->_audioStream->time_base.den);
+				long long endtime = desc->_impl->_time + SecondsToTimebase(DEMUX_SATURATE, desc->_audioStream);
 				if ((desc->_videoStream != NULL && desc->_audioStream != NULL && desc->_videoPackets.Tail() >= endtime && desc->_audioPackets.Tail() > endtime) ||
 					(desc->_audioStream != NULL && desc->_audioPackets.Tail() >= endtime) ||
 					(desc->_videoStream != NULL && desc->_videoPackets.Tail() >= endtime))
@@ -759,7 +796,7 @@ namespace pioneer
 			desc._renderWindow = NULL;
 			desc._renderRenderer = NULL;
 			desc._renderTexture = NULL;
-            if (SDL_Init(SDL_INIT_AUDIO | SDL_INIT_VIDEO | SDL_INIT_TIMER) != 0 && error(&desc, -1))
+			if (SDL_Init(SDL_INIT_AUDIO | SDL_INIT_VIDEO | SDL_INIT_TIMER) != 0 && error(&desc, -1))
                 goto end;
             if (avformat_open_input(&desc._demuxFormatCtx, desc._impl->_filename.c_str(), NULL, NULL) != 0 && error(&desc, -2))
                 goto end;
@@ -775,9 +812,10 @@ namespace pioneer
             if (((desc._audioStream == NULL && desc._videoStream == NULL) || (desc._audioStream == NULL && desc._impl->_flag == NoVideo) ||
                  (desc._videoStream == NULL && desc._impl->_flag == NoAudio)) && error(&desc, -4))
                 goto end;
+			desc._timebase = CommonTimebase((desc._audioStream == NULL ? NULL : &desc._audioStream->time_base), (desc._videoStream == NULL ? NULL : &desc._videoStream->time_base));
             if (desc._audioStream != NULL)
             {
-				desc._audioTimebase = desc._audioStream->time_base.num / (double)desc._audioStream->time_base.den;
+				desc._audioTimebase = desc._audioStream->time_base;
                 AVCodec* audioCodec = avcodec_find_decoder(desc._audioStream->codecpar->codec_id);
                 if (audioCodec == NULL && error(&desc, -5))
                     goto end;
@@ -790,7 +828,7 @@ namespace pioneer
             }
             if (desc._videoStream != NULL)
             {
-				desc._videoTimebase = desc._videoStream->time_base.num / (double)desc._videoStream->time_base.den;
+				desc._videoTimebase = desc._videoStream->time_base;
                 AVCodec* videoCodec = avcodec_find_decoder(desc._videoStream->codecpar->codec_id);
                 if (videoCodec == NULL && error(&desc, -9))
                     goto end;
