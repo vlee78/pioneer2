@@ -31,6 +31,52 @@ namespace pioneer
         "Playing(3)",
     };
 
+	static long long SecondsToSamples(double seconds, int sampleRate)
+	{
+		return (long long)(seconds * sampleRate);
+	}
+
+	static long long SecondsToTimebase(double seconds, AVStream* stream)
+	{
+		return (long long)(seconds * stream->time_base.den / stream->time_base.num);
+	}
+
+	static int LCM(int a, int b)
+	{
+		int na = a;
+		int nb = b;
+		if (nb) while ((na %= nb) && (nb %= na));
+		int gcd = na + nb;
+		return a * b / gcd;
+	}
+
+	static AVRational CommonTimebase(AVRational* audioTimebase, AVRational* videoTimebase)
+	{
+		AVRational res;
+		if (audioTimebase != NULL && videoTimebase != NULL)
+			res = { LCM(audioTimebase->num, videoTimebase->num), LCM(audioTimebase->den, videoTimebase->den) };
+		else if (audioTimebase != NULL)
+			res = { audioTimebase->num, audioTimebase->den };
+		else if (videoTimebase != NULL)
+			res = { videoTimebase->num, videoTimebase->den };
+		return res;
+	}
+
+	static long long TimestampToTimestamp(long long timestamp, AVRational* frTimebase, AVRational* toTimebase)
+	{
+		return timestamp * frTimebase->num * toTimebase->den / (frTimebase->den * toTimebase->num);
+	}
+
+	static long long SecondsToTimestamp(double seconds, AVRational* timebase)
+	{
+		return (long long)(seconds * timebase->den / timebase->num);
+	}
+
+	static double TimestampToSeconds(long long timestamp, AVRational* timebase)
+	{
+		return timestamp * timebase->num / (double)timebase->den;
+	}
+
 	class PacketQueue
 	{
 	public:
@@ -89,17 +135,18 @@ namespace pioneer
 			SDL_UnlockMutex(_mutex);
 		}
 
-		long long Head()
+		long long Head(AVRational* packetTimebase, AVRational* commonTimebase)
 		{
 			SDL_LockMutex(_mutex);
 			long long head = 0;
 			if (_queue.size() > 0)
 				head = _queue.front()->pts;
+			head = TimestampToTimestamp(head, packetTimebase, commonTimebase);
 			SDL_UnlockMutex(_mutex);
 			return head;
 		}
 
-		double Tail()
+		double Tail(AVRational* packetTimebase, AVRational* commonTimebase)
 		{
 			SDL_LockMutex(_mutex);
 			double tail = 0;
@@ -108,6 +155,7 @@ namespace pioneer
 				AVPacket* packet = _queue.back();
 				tail = packet->pts + packet->duration;
 			}
+			tail = TimestampToTimestamp(tail, packetTimebase, commonTimebase);
 			SDL_UnlockMutex(_mutex);
 			return tail;
 		}
@@ -572,53 +620,6 @@ namespace pioneer
 			return res;
 		}
 
-		static long long SecondsToSamples(double seconds, int sampleRate)
-		{
-			return (long long)(seconds * sampleRate);
-		}
-        
-		static long long SecondsToTimebase(double seconds, AVStream* stream)
-		{
-			return (long long)(seconds * stream->time_base.den / stream->time_base.num);
-		}
-
-		static int LCM(int a, int b)
-		{	
-			int na = a;
-			int nb = b;
-			if (nb) while ((na %= nb) && (nb %= na));
-			int gcd = na + nb;
-			return a * b / gcd;
-		}
-
-		static AVRational CommonTimebase(AVRational* audioTimebase, AVRational* videoTimebase)
-		{
-			AVRational res;
-			if (audioTimebase != NULL && videoTimebase != NULL)
-				res = { LCM(audioTimebase->num, videoTimebase->num), LCM(audioTimebase->den, videoTimebase->den) };
-			else if (audioTimebase != NULL)
-				res = { audioTimebase->num, audioTimebase->den };
-			else if (videoTimebase != NULL)
-				res = { videoTimebase->num, videoTimebase->den };
-			return res;
-		}
-
-		static long long TimestampToTimestamp(long long timestamp, AVRational* frTimebase, AVRational* toTimebase)
-		{
-			return timestamp * frTimebase->num * toTimebase->den / (frTimebase->den * toTimebase->num);
-		}
-
-		static long long SecondsToTimestamp(double seconds, AVRational* timebase)
-		{
-			return (long long)(seconds * timebase->den / timebase->num);
-		}
-
-		static double TimestampToSeconds(long long timestamp, AVRational* timebase)
-		{
-			return timestamp * timebase->num / (double)timebase->den;
-		}
-
-
 		static int DemuxThread(void* param)
 		{
 			Desc* desc = (Desc*)param;
@@ -629,12 +630,11 @@ namespace pioneer
 					SDL_Delay(0);
 					continue;
 				}
-				long long endtime = desc->_impl->_time + SecondsToTimestamp(DEMUX_SATURATE, desc->_audioTimebase);
-				//todo:这里要考虑到eof的情况
-				if ((desc->_videoStream != NULL && desc->_audioStream != NULL && desc->_videoPackets.Tail() >= endtime && desc->_audioPackets.Tail() > endtime) ||
-					(desc->_audioStream != NULL && desc->_audioPackets.Tail() >= endtime) ||
-					(desc->_videoStream != NULL && desc->_videoPackets.Tail() >= endtime))
-				{
+				long long endtime = desc->_impl->_time + SecondsToTimestamp(DEMUX_SATURATE, &desc->_timebase);
+				if ((desc->_videoStream != NULL && desc->_audioStream != NULL && desc->_videoPackets.Tail(desc->_videoTimebase, &desc->_timebase) >= endtime && desc->_audioPackets.Tail(desc->_audioTimebase, &desc->_timebase) >= endtime) ||
+					(desc->_audioStream != NULL && desc->_audioPackets.Tail(desc->_audioTimebase, &desc->_timebase) >= endtime) ||
+					(desc->_videoStream != NULL && desc->_videoPackets.Tail(desc->_videoTimebase, &desc->_timebase) >= endtime))
+				{//如果v或者a的packet尾都超过当前+sat则停止demux进程,这里要考虑eof的情况,也要考虑v/a不同步的极端情况
 					SDL_Delay(0);
 					continue;
 				}
@@ -650,20 +650,11 @@ namespace pioneer
 					if (desc->_audioStream && packet->stream_index == desc->_audioStream->index)
 					{
 						desc->_audioPackets.Enqueue(packet);
-						desc->log("\t\tDemux: Audio: time = %.3f (%.3f) %.3f\n",
-							TimestampToSeconds(packet->pts, desc->_audioTimebase),
-							TimestampToSeconds(packet->duration, desc->_audioTimebase),
-							TimestampToSeconds(packet->pts + packet->duration, desc->_audioTimebase));
 						packet = NULL;
 					}
 					else if (desc->_videoStream && packet->stream_index == desc->_videoStream->index)
 					{
 						desc->_videoPackets.Enqueue(packet);
-						desc->log("\tDemux: Video: time = %.3f (%.3f) %.3f, %s\n", 
-							TimestampToSeconds(packet->pts, desc->_audioTimebase),
-							TimestampToSeconds(packet->duration, desc->_audioTimebase),
-							TimestampToSeconds(packet->pts + packet->duration, desc->_audioTimebase),
-							PacketFlagDesc(packet->flags).c_str());
 						packet = NULL;
 					}
 				}
