@@ -367,7 +367,7 @@ namespace pioneer
 					break;
                 AVSampleFormat format = (AVSampleFormat)frame->format;
 				int channels = frame->channels;
-                if (sampleRate != frame->sample_rate || format != AV_SAMPLE_FMT_FLT)
+                if (sampleRate != frame->sample_rate || format != AV_SAMPLE_FMT_FLTP)
                 {
                     desc->_impl->_errorCode = -201;
                     desc->_impl->_looping = false;
