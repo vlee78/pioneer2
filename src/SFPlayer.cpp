@@ -77,6 +77,11 @@ namespace pioneer
 		return timestamp * timebase->num / (double)timebase->den;
 	}
 
+	static long long SamplesToTimestamp(long long samples, int sampleRate, AVRational* timebase)
+	{
+		return (samples * timebase->den) / ((long long)sampleRate * timebase->num);
+	}
+
 	class PacketQueue
 	{
 	public:
@@ -135,27 +140,25 @@ namespace pioneer
 			SDL_UnlockMutex(_mutex);
 		}
 
-		long long Head(AVRational* packetTimebase, AVRational* commonTimebase)
+		long long Head()
 		{
 			SDL_LockMutex(_mutex);
 			long long head = 0;
 			if (_queue.size() > 0)
 				head = _queue.front()->pts;
-			head = TimestampToTimestamp(head, packetTimebase, commonTimebase);
 			SDL_UnlockMutex(_mutex);
 			return head;
 		}
 
-		double Tail(AVRational* packetTimebase, AVRational* commonTimebase)
+		long long Tail()
 		{
 			SDL_LockMutex(_mutex);
-			double tail = 0;
+			long long tail = 0;
 			if (_queue.size() > 0)
 			{
 				AVPacket* packet = _queue.back();
 				tail = packet->pts + packet->duration;
 			}
-			tail = TimestampToTimestamp(tail, packetTimebase, commonTimebase);
 			SDL_UnlockMutex(_mutex);
 			return tail;
 		}
@@ -249,16 +252,16 @@ namespace pioneer
 			if (_queue.size() > 0)
 			{
 				AVFrame* frame = _queue.front();
-				head = frame->pts + frame->height;
+				head = frame->pts + frame->height;//偏移的ts
 			}
 			SDL_UnlockMutex(_mutex);
 			return head;
 		}
 
-		double Tail()
+		long long Tail()
 		{
 			SDL_LockMutex(_mutex);
-			double tail = 0;
+			long long tail = 0;
 			if (_queue.size() > 0)
 			{
 				AVFrame* frame = _queue.back();
@@ -314,12 +317,18 @@ namespace pioneer
 					file = fopen("log.txt", "wb");
 				static long long lastTs = std::chrono::high_resolution_clock::now().time_since_epoch().count();
 				double time = (std::chrono::high_resolution_clock::now().time_since_epoch().count() - lastTs) / (double)1000000000;
-				fprintf(file, "(%.3f, %.3f) A:[%.3f, %.3f] V:[%.3f, %.3f] a:[%.3f, %.3f] v:[%.3f, %.3f] \n", time, _impl->_time, 
-					_audioFrames.Head(), _audioFrames.Tail(), _videoFrames.Head(), _videoFrames.Tail(),
-					_audioPackets.Head(), _audioPackets.Tail(), _videoPackets.Head(), _videoPackets.Tail());
-				printf("(%.3f, %.3f) A:[%.3f, %.3f] V:[%.3f, %.3f] a:[%.3f, %.3f] v:[%.3f, %.3f] \n", time, _impl->_time,
-					_audioFrames.Head(), _audioFrames.Tail(), _videoFrames.Head(), _videoFrames.Tail(),
-					_audioPackets.Head(), _audioPackets.Tail(), _videoPackets.Head(), _videoPackets.Tail());
+				fprintf(file, "(%.3f, %.3f) A:[%.3f, %.3f] V:[%.3f, %.3f] a:[%.3f, %.3f] v:[%.3f, %.3f] \n", 
+					time, TimestampToSeconds(_impl->_time, &_timebase), 
+					TimestampToSeconds(_audioFrames.Head(), _audioTimebase), TimestampToSeconds(_audioFrames.Tail(), _audioTimebase), 
+					TimestampToSeconds(_videoFrames.Head(), _videoTimebase), TimestampToSeconds(_videoFrames.Tail(), _videoTimebase),
+					TimestampToSeconds(_audioPackets.Head(), _audioTimebase), TimestampToSeconds(_audioPackets.Tail(), _audioTimebase),
+					TimestampToSeconds(_videoPackets.Head(), _videoTimebase), TimestampToSeconds(_videoPackets.Tail(), _videoTimebase));
+				printf("(%.3f, %.3f) A:[%.3f, %.3f] V:[%.3f, %.3f] a:[%.3f, %.3f] v:[%.3f, %.3f] \n", 
+					time, TimestampToSeconds(_impl->_time, &_timebase),
+					TimestampToSeconds(_audioFrames.Head(), _audioTimebase), TimestampToSeconds(_audioFrames.Tail(), _audioTimebase),
+					TimestampToSeconds(_videoFrames.Head(), _videoTimebase), TimestampToSeconds(_videoFrames.Tail(), _videoTimebase),
+					TimestampToSeconds(_audioPackets.Head(), _audioTimebase), TimestampToSeconds(_audioPackets.Tail(), _audioTimebase),
+					TimestampToSeconds(_videoPackets.Head(), _videoTimebase), TimestampToSeconds(_videoPackets.Tail(), _videoTimebase));
 				va_list list;
 				va_start(list, format);
 				vfprintf(file, format, list);
@@ -357,77 +366,67 @@ namespace pioneer
 				if (frame == NULL)
 					break;
                 AVSampleFormat format = (AVSampleFormat)frame->format;
-				//double time = frame->pts * desc->_audioTimebase;
-                int channels = frame->channels;
-                if (sampleRate != frame->sample_rate)
+				int channels = frame->channels;
+                if (sampleRate != frame->sample_rate || format != AV_SAMPLE_FMT_FLT)
                 {
                     desc->_impl->_errorCode = -201;
                     desc->_impl->_looping = false;
                     return;
                 }
-                if (format == AV_SAMPLE_FMT_FLTP)
+                int framemax = frame->nb_samples;
+                int frameoff = frame->width;
+                if (channels == 6)
                 {
-                    int framemax = frame->nb_samples;
-                    int frameoff = frame->width;
-                    if (channels == 6)
+                    float* buf0 = (float*)frame->data[0];
+                    float* buf1 = (float*)frame->data[1];
+                    float* buf2 = (float*)frame->data[2];
+                    float* buf3 = (float*)frame->data[3];
+                    float* buf4 = (float*)frame->data[4];
+                    float* buf5 = (float*)frame->data[5];
+                    for (; frameoff < framemax && bufoff < bufmax; frameoff++, bufoff += bufchs)
                     {
-                        float* buf0 = (float*)frame->data[0];
-                        float* buf1 = (float*)frame->data[1];
-                        float* buf2 = (float*)frame->data[2];
-                        float* buf3 = (float*)frame->data[3];
-                        float* buf4 = (float*)frame->data[4];
-                        float* buf5 = (float*)frame->data[5];
-                        for (; frameoff < framemax && bufoff < bufmax; frameoff++, bufoff += bufchs)
-                        {
-                            float val0 = buf0[frameoff] + buf2[frameoff] + buf3[frameoff] + buf4[frameoff];
-                            float val1 = buf1[frameoff] + buf2[frameoff] + buf3[frameoff] + buf5[frameoff];
-                            int check0 = (int)(val0 * 32768.0f);
-                            int check1 = (int)(val1 * 32768.0f);
-                            check0 = (check0 < -32768 ? -32768 : (check0 > 32767 ? 32767 : check0));
-                            check1 = (check1 < -32768 ? -32768 : (check1 > 32767 ? 32767 : check1));
-                            buffer0[bufoff] = (short)check0;
-                            buffer1[bufoff] = (short)check1;
-                        }
+                        float val0 = buf0[frameoff] + buf2[frameoff] + buf3[frameoff] + buf4[frameoff];
+                        float val1 = buf1[frameoff] + buf2[frameoff] + buf3[frameoff] + buf5[frameoff];
+                        int check0 = (int)(val0 * 32768.0f);
+                        int check1 = (int)(val1 * 32768.0f);
+                        check0 = (check0 < -32768 ? -32768 : (check0 > 32767 ? 32767 : check0));
+                        check1 = (check1 < -32768 ? -32768 : (check1 > 32767 ? 32767 : check1));
+                        buffer0[bufoff] = (short)check0;
+                        buffer1[bufoff] = (short)check1;
                     }
-                    else if (channels == 2)
+                }
+                else if (channels == 2)
+                {
+                    float* buf0 = (float*)frame->data[0];
+                    float* buf1 = (float*)frame->data[1];
+                    for (; frameoff < framemax && bufoff < bufmax; frameoff++, bufoff += bufchs)
                     {
-                        float* buf0 = (float*)frame->data[0];
-                        float* buf1 = (float*)frame->data[1];
-                        for (; frameoff < framemax && bufoff < bufmax; frameoff++, bufoff += bufchs)
-                        {
-                            float val0 = buf0[frameoff];
-                            float val1 = buf1[frameoff];
-                            int check0 = (int)(val0 * 32768.0f);
-                            int check1 = (int)(val1 * 32768.0f);
-                            check0 = (check0 < -32768 ? -32768 : (check0 > 32767 ? 32767 : check0));
-                            check1 = (check1 < -32768 ? -32768 : (check1 > 32767 ? 32767 : check1));
-                            buffer0[bufoff] = (short)check0;
-                            buffer1[bufoff] = (short)check1;
-                        }
+                        float val0 = buf0[frameoff];
+                        float val1 = buf1[frameoff];
+                        int check0 = (int)(val0 * 32768.0f);
+                        int check1 = (int)(val1 * 32768.0f);
+                        check0 = (check0 < -32768 ? -32768 : (check0 > 32767 ? 32767 : check0));
+                        check1 = (check1 < -32768 ? -32768 : (check1 > 32767 ? 32767 : check1));
+                        buffer0[bufoff] = (short)check0;
+                        buffer1[bufoff] = (short)check1;
                     }
-                    else
-                    {
-                        desc->_impl->_errorCode = -202;
-                        desc->_impl->_looping = false;
-                        return;
-                    }
-                    frame->width = frameoff;//音频帧内的已经读取输出的偏移,单位为frame
-					frame->height = (int)((long long)frameoff * sampleRate / desc->_audioStream->time_base.num / desc->_audioStream->time_base.den);//将帧内偏移转换为timebase
-					if (frameoff >= framemax)
-						desc->_audioFrames.PopFront();
-                    if (bufoff >= bufmax)
-                        break;
                 }
                 else
                 {
-                    desc->_impl->_errorCode = -203;
+                    desc->_impl->_errorCode = -202;
                     desc->_impl->_looping = false;
                     return;
                 }
+                frame->width = frameoff;//音频帧内的已经读取输出的偏移,单位为frame
+				frame->height = (int)SamplesToTimestamp(frameoff, sampleRate, desc->_audioTimebase);
+				if (frameoff >= framemax)
+					desc->_audioFrames.PopFront();
+                if (bufoff >= bufmax)
+                    break;
             }
             long long samples = bufoff / bufchs;//总共消耗了frame queue多少sample
-			long long shift = (long long)samples * sampleRate / desc->_audioStream->time_base.num / desc->_audioStream->time_base.den;
-            desc->_impl->_time += shift;
+			long long shift = SamplesToTimestamp(samples, sampleRate, &desc->_timebase);
+			desc->_impl->_time += shift;
             desc->_impl->_ts = 0;
         }
 		
@@ -444,8 +443,7 @@ namespace pioneer
 				AVFrame* frame = (AVFrame*)desc->_videoFrames.PeekFront();
 				if (frame != NULL)
 				{
-					long long pts = frame->best_effort_timestamp;
-					double time = pts * desc->_videoTimebase;
+					long long time = TimestampToTimestamp(frame->best_effort_timestamp, desc->_videoTimebase, &desc->_timebase);
 					if (time <= desc->_impl->_time)
 					{
 						if (SDL_UpdateYUVTexture(desc->_renderTexture, NULL, frame->data[0], frame->linesize[0], frame->data[1],
@@ -467,7 +465,7 @@ namespace pioneer
 					}
 				}
 				if (desc->_audioStream == NULL)
-				{
+				{/*
 					long long nanoTs = std::chrono::high_resolution_clock::now().time_since_epoch().count();
 					long long nanoDiff = nanoTs - desc->_impl->_ts;
 					double diffSecs = nanoDiff / (double)1000000000l;
@@ -475,7 +473,7 @@ namespace pioneer
 					{
 						desc->_impl->_time += diffSecs;
 						desc->_impl->_ts = nanoTs;
-					}
+					}*/
 				}	
 			}
 			return 0;
@@ -488,11 +486,11 @@ namespace pioneer
             while (desc->_impl->_looping)
             {
                 AVPacket* packet = NULL;
-				double endtime = desc->_impl->_time + AUDIO_SATURATE;
+				long long endtime = desc->_impl->_time + SecondsToTimestamp(AUDIO_SATURATE, &desc->_timebase);
                 if ((desc->_impl->_state != Buffering && desc->_impl->_state != Playing) ||
-                    (desc->_audioFrames.Tail() >= endtime ) ||
+                    (TimestampToTimestamp(desc->_audioFrames.Tail(), desc->_audioTimebase, &desc->_timebase) >= endtime ) ||
                     (packet = (AVPacket*)desc->_audioPackets.Dequeue()) == NULL)
-                {
+                {//如果A的Frames队列尾时间超过time+sat,暂停decode
                     SDL_Delay(0);
                     continue;
                 }
@@ -519,15 +517,15 @@ namespace pioneer
                             error(desc, -303);
                         break;
                     }
-					double time = frame->pts * desc->_audioTimebase;
+					long long time = TimestampToTimestamp(frame->pts, desc->_audioTimebase, &desc->_timebase);
 					if (time >= desc->_impl->_time)
-					{//解压包时间戳小于当前指示时间，
+					{//解压包时间戳大于等于当前时间才进入render对列
 						frame->width = 0;
 						frame->height = 0;
 						desc->_audioFrames.Enqueue(frame);
 					}
 					else
-					{//丢掉
+					{//否则丢弃掉
 						av_frame_unref(frame);
 						av_frame_free(&frame);
 					}
@@ -550,9 +548,9 @@ namespace pioneer
 			while (desc->_impl->_looping)
 			{
                 AVPacket* packet = NULL;
-				double endtime = desc->_impl->_time + VIDEO_SATURATE;
+				long long endtime = desc->_impl->_time + SecondsToTimestamp(VIDEO_SATURATE, &desc->_timebase);
 				if ((desc->_impl->_state != Buffering && desc->_impl->_state != Playing) ||
-                    (desc->_videoFrames.Tail() >= endtime ) ||
+                    (TimestampToTimestamp(desc->_videoFrames.Tail(), desc->_videoTimebase, &desc->_timebase) >= endtime ) ||
                     (packet = (AVPacket*)desc->_videoPackets.Dequeue()) == NULL)
 				{
 					SDL_Delay(0);
@@ -581,18 +579,18 @@ namespace pioneer
                             error(desc, -203);
                         break;
                     }
-					double time = frame->pts * desc->_videoTimebase;
+					long long time = TimestampToTimestamp(frame->pts, desc->_videoTimebase, &desc->_timebase);
 					if (time >= desc->_impl->_time)
 					{
-						double duration = frame->pkt_duration * desc->_videoTimebase;
 						desc->_videoFrames.Enqueue(frame);
+						frame = NULL;
 					}
 					else
 					{
 						av_frame_unref(frame);
 						av_frame_free(&frame);
+						frame = NULL;
 					}
-					frame = NULL;
 				}
 			}
 			if (frame != NULL)
@@ -631,9 +629,13 @@ namespace pioneer
 					continue;
 				}
 				long long endtime = desc->_impl->_time + SecondsToTimestamp(DEMUX_SATURATE, &desc->_timebase);
-				if ((desc->_videoStream != NULL && desc->_audioStream != NULL && desc->_videoPackets.Tail(desc->_videoTimebase, &desc->_timebase) >= endtime && desc->_audioPackets.Tail(desc->_audioTimebase, &desc->_timebase) >= endtime) ||
-					(desc->_audioStream != NULL && desc->_audioPackets.Tail(desc->_audioTimebase, &desc->_timebase) >= endtime) ||
-					(desc->_videoStream != NULL && desc->_videoPackets.Tail(desc->_videoTimebase, &desc->_timebase) >= endtime))
+				if ((desc->_videoStream != NULL && desc->_audioStream != NULL && 	
+						TimestampToTimestamp(desc->_videoPackets.Tail(), desc->_videoTimebase, &desc->_timebase) >= endtime && 
+						TimestampToTimestamp(desc->_audioPackets.Tail(), desc->_audioTimebase, &desc->_timebase) >= endtime) ||
+					(desc->_audioStream != NULL && desc->_videoStream == NULL &&
+						TimestampToTimestamp(desc->_audioPackets.Tail(), desc->_audioTimebase, &desc->_timebase) >= endtime) ||
+					(desc->_audioStream == NULL && desc->_videoStream != NULL &&
+						TimestampToTimestamp(desc->_videoPackets.Tail(), desc->_videoTimebase, &desc->_timebase) >= endtime))
 				{//如果v或者a的packet尾都超过当前+sat则停止demux进程,这里要考虑eof的情况,也要考虑v/a不同步的极端情况
 					SDL_Delay(0);
 					continue;
@@ -685,7 +687,7 @@ namespace pioneer
         }
 
 		static long long Seek(Desc* desc, double seekto)
-		{
+		{/*
 			long long errorCode = 0;
 			if (desc->_videoStream != NULL)
 			{
@@ -784,7 +786,8 @@ namespace pioneer
 			}
 			if (errorCode == 0)
 				desc->_impl->_time = seekto;
-			return errorCode;
+			return errorCode;*/
+			return 0;
 		}
         
         static int MainThread(void* param)
@@ -966,10 +969,14 @@ namespace pioneer
                 }
 				else if (desc._impl->_state == Buffering)
 				{
-					double endtime = desc._impl->_time + RENDER_BUFFERED;
-					if ((desc._audioStream != NULL && desc._videoStream != NULL && desc._audioFrames.Tail() >= endtime && desc._videoFrames.Tail() >= endtime) ||
-						(desc._audioStream != NULL && desc._videoStream == NULL && desc._audioFrames.Tail() >= endtime)||
-						(desc._audioStream == NULL && desc._videoStream != NULL && desc._videoFrames.Tail() >= endtime))
+					long long endtime = desc._impl->_time + SecondsToTimestamp(RENDER_BUFFERED, &desc._timebase);
+					if ((desc._audioStream != NULL && desc._videoStream != NULL && 
+							TimestampToTimestamp(desc._audioFrames.Tail(), desc._audioTimebase, &desc._timebase) >= endtime && 
+							TimestampToTimestamp(desc._videoFrames.Tail(), desc._videoTimebase, &desc._timebase) >= endtime) ||
+						(desc._audioStream != NULL && desc._videoStream == NULL && 
+							TimestampToTimestamp(desc._audioFrames.Tail(), desc._audioTimebase, &desc._timebase) >= endtime)||
+						(desc._audioStream == NULL && desc._videoStream != NULL && 
+							TimestampToTimestamp(desc._videoFrames.Tail(), desc._videoTimebase, &desc._timebase) >= endtime))
 					{
 						desc.swstate(Playing);
 						continue;
@@ -1026,7 +1033,7 @@ namespace pioneer
 			return -1;
         _impl->_filename = filename;
         _impl->_flag = flag;
-        _impl->_time = 0.0;
+        _impl->_time = 0;
         _impl->_state = Closed;
         _impl->_ts = std::chrono::high_resolution_clock::now().time_since_epoch().count();
         _impl->_looping = true;
