@@ -437,7 +437,7 @@ namespace pioneer
 			{
 				if (desc->_impl->_state != Playing || desc->_videoStream == NULL)
 				{
-					SDL_Delay(100);
+					SDL_Delay(0);
 					continue;
 				}
 				AVFrame* frame = (AVFrame*)desc->_videoFrames.PeekFront();
