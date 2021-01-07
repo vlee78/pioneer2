@@ -20,11 +20,6 @@ extern "C"
 	#include "libavutil/opt.h"
 }
 
-#define DEMUX_SATURATE 5//A和V的packet队列尾同时大于time+DEMUX_SATURATE的话，暂停demux
-#define AUDIO_SATURATE 5//A的frame队列尾大于time+AUDIO_SATURATE的话，暂停audio解码
-#define VIDEO_SATURATE 5//V的frame队列尾大于time+VIDEO_SATURATE的话，暂停video解码
-#define RENDER_BUFFERED 4//A和V的frame队列尾大于time+RENDER_BUFFERED的话，从buffering开始playing
-
 namespace pioneer
 {
 	class SFDecoder::SFDecoderImpl
@@ -40,10 +35,181 @@ namespace pioneer
 		AVRational _audioTimebase;
 		AVRational _videoTimebase;
 		bool _looping;
+		bool _eof;
 		SDL_Thread* _thread;
+		long long _timestamp;
+		long long _errorcode;
+		std::list<AVPacket*> _audioPackets;
+		std::list<AVPacket*> _videoPackets;
+		std::list<AVFrame*> _audioFrames;
+		std::list<AVFrame*> _videoFrames;
 
 		static int DecodeThread(void* param)
 		{
+			SFDecoderImpl* impl = (SFDecoderImpl*)param;
+			AVFrame* audioFrame = NULL;
+			AVFrame* videoFrame = NULL;
+			while (impl->_looping)
+			{
+				if (impl->_eof)
+				{
+					SDL_Delay(100);
+					continue;
+				}
+				long long thresholdTimestamp = impl->_timestamp + SFUtils::SecondsToTimestamp(5.0, &impl->_commonTimebase);
+				long long audioTailTimestamp = (impl->_audioFrames.size() == 0 ? -1 : SFUtils::TimestampToTimestamp(impl->_audioFrames.back()->pts, &impl->_audioTimebase, &impl->_commonTimebase));
+				long long videoTailTimestamp = (impl->_videoFrames.size() == 0 ? -1 : SFUtils::TimestampToTimestamp(impl->_videoFrames.back()->pts, &impl->_audioTimebase, &impl->_commonTimebase));
+				if (audioTailTimestamp >= thresholdTimestamp && videoTailTimestamp >= thresholdTimestamp)
+				{
+					SDL_Delay(0);
+					continue;
+				}
+				long long audioHeadTimestamp = (impl->_audioPackets.size() == 0 ? -1 : SFUtils::TimestampToTimestamp(impl->_audioPackets.front()->pts, &impl->_audioTimebase, &impl->_commonTimebase));
+				long long videoHeadTimestamp = (impl->_videoPackets.size() == 0 ? -1 : SFUtils::TimestampToTimestamp(impl->_videoPackets.front()->pts, &impl->_videoTimebase, &impl->_commonTimebase));
+				if (audioHeadTimestamp >= 0 && (videoHeadTimestamp < 0 || audioHeadTimestamp <= videoHeadTimestamp))
+				{
+					AVPacket* audioPacket = impl->_audioPackets.front();
+					impl->_audioPackets.pop_front();
+					int ret = avcodec_send_packet(impl->_audioCodecCtx, audioPacket);
+					av_packet_unref(audioPacket);
+					av_packet_free(&audioPacket);
+					audioPacket = NULL;
+					if (ret != 0)
+					{
+						impl->_looping = false;
+						impl->_errorcode = -1;
+						break;
+					}
+					while (impl->_looping)
+					{
+						if (audioFrame == NULL && (audioFrame = av_frame_alloc()) == NULL)
+						{
+							impl->_looping = false;
+							impl->_errorcode = -1;
+							break;
+						}
+						ret = avcodec_receive_frame(impl->_audioCodecCtx, audioFrame);
+						if (ret < 0)
+						{
+							if (ret != AVERROR(EAGAIN) && ret != AVERROR_EOF)
+							{
+								impl->_looping = false;
+								impl->_errorcode = -2;
+							}
+							break;
+						}
+						long long timestamp = SFUtils::TimestampToTimestamp(audioFrame->pts, &impl->_audioTimebase, &impl->_commonTimebase);
+						if (timestamp >= impl->_timestamp)
+						{
+							impl->_audioFrames.push_back(audioFrame);
+							audioFrame = NULL;
+						}
+						else
+						{
+							av_frame_unref(audioFrame);
+							av_frame_free(&audioFrame);
+							audioFrame = NULL;
+						}
+					}
+				}
+				else if (videoHeadTimestamp >= 0 && (audioHeadTimestamp < 0 || videoHeadTimestamp <= audioHeadTimestamp))
+				{
+					AVPacket* videoPacket = impl->_videoPackets.front();
+					impl->_videoPackets.pop_front();
+					int ret = avcodec_send_packet(impl->_videoCodecCtx, videoPacket);
+					av_packet_unref(videoPacket);
+					av_packet_free(&videoPacket);
+					videoPacket = NULL;
+					if (ret != 0)
+					{
+						impl->_looping = false;
+						impl->_errorcode = -3;
+						break;
+					}
+					while (impl->_looping)
+					{
+						if (videoFrame == NULL && (videoFrame = av_frame_alloc()) == NULL)
+						{
+							impl->_looping = false;
+							impl->_errorcode = -3;
+							break;
+						}
+						int ret = avcodec_receive_frame(impl->_videoCodecCtx, videoFrame);
+						if (ret < 0)
+						{
+							if (ret != AVERROR(EAGAIN) && ret != AVERROR_EOF)
+							{
+								impl->_looping = false;
+								impl->_errorcode = -3;
+							}
+							break;
+						}
+						long long timestamp = SFUtils::TimestampToTimestamp(videoFrame->pts, &impl->_videoTimebase, &impl->_commonTimebase);
+						if (timestamp >= impl->_timestamp)
+						{
+							impl->_videoFrames.push_back(videoFrame);
+							videoFrame = NULL;
+						}
+						else
+						{
+							av_frame_unref(videoFrame);
+							av_frame_free(&videoFrame);
+							videoFrame = NULL;
+						}
+					}
+				}
+				else
+				{
+					AVPacket* packet = av_packet_alloc();
+					if (packet == NULL)
+					{
+						impl->_looping = false;
+						impl->_errorcode = -1;
+						break;
+					}
+					int ret = av_read_frame(impl->_demuxFormatCtx, packet);
+					if (ret == 0)
+					{
+						if (impl->_audioStream && packet->stream_index == impl->_audioStream->index)
+						{
+							impl->_audioPackets.push_back(packet);
+							packet = NULL;
+						}
+						else if (impl->_videoStream && packet->stream_index == impl->_videoStream->index)
+						{
+							impl->_videoPackets.push_back(packet);
+							packet = NULL;
+						}
+					}
+					else if (ret == AVERROR_EOF)
+					{
+						impl->_eof = true;
+					}
+					else
+					{
+						impl->_looping = false;
+						impl->_errorcode = -2;
+					}
+					if (packet != NULL)
+					{
+						av_packet_unref(packet);
+						av_packet_free(&packet);
+						packet = NULL;
+					}
+				}
+			}
+			if (audioFrame != NULL)
+			{
+				av_frame_unref(audioFrame);
+				av_frame_free(&audioFrame);
+				audioFrame = NULL;
+			}
+			if (videoFrame != NULL)
+			{
+				av_frame_unref(videoFrame);
+				av_frame_free(&videoFrame);
+				videoFrame = NULL;
+			}
 			return 0;
 		}
 	};
@@ -74,8 +240,11 @@ namespace pioneer
 		_impl->_audioTimebase = { 0, 0 };
 		_impl->_videoTimebase = { 0, 0 };
 		_impl->_looping = true;
+		_impl->_eof = false;
 		_impl->_thread = NULL;
-
+		_impl->_timestamp = 0;
+		_impl->_errorcode = 0;
+		
 		if (avformat_open_input(&_impl->_demuxFormatCtx, _impl->_filename.c_str(), NULL, NULL) != 0 && Uninit())
 			return -2;
 		if (avformat_find_stream_info(_impl->_demuxFormatCtx, NULL) < 0 && Uninit())
@@ -132,6 +301,10 @@ namespace pioneer
 				SDL_WaitThread(_impl->_thread, NULL);
 				_impl->_thread = NULL;
 			}
+			for (auto it = _impl->_audioPackets.begin(); it != _impl->_audioPackets.end(); av_packet_unref(*it), av_packet_free(&*it), it++);
+			for (auto it = _impl->_videoPackets.begin(); it != _impl->_videoPackets.end(); av_packet_unref(*it), av_packet_free(&*it), it++);
+			for (auto it = _impl->_audioFrames.begin(); it != _impl->_audioFrames.end(); av_frame_unref(*it), av_frame_free(&*it), it++);
+			for (auto it = _impl->_videoFrames.begin(); it != _impl->_videoFrames.end(); av_frame_unref(*it), av_frame_free(&*it), it++);
 			delete _impl;
 			_impl = NULL;
 		}
