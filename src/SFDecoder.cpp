@@ -1,6 +1,6 @@
 #pragma warning (disable:4819)
 
-#include "SFDemuxer.h"
+#include "SFDecoder.h"
 #include "SFUtils.h"
 #include "SDL.h"
 #include <stdio.h>
@@ -27,7 +27,7 @@ extern "C"
 
 namespace pioneer
 {
-	class SFDemuxer::SFDemuxerImpl
+	class SFDecoder::SFDecoderImpl
 	{
 	public:
 		std::string _filename;
@@ -48,20 +48,20 @@ namespace pioneer
 		}
 	};
 
-	SFDemuxer::SFDemuxer()
+	SFDecoder::SFDecoder()
 	{
 		_impl = NULL;
 	}
 
-	SFDemuxer::~SFDemuxer()
+	SFDecoder::~SFDecoder()
 	{
 		Uninit();
 	}
 
-	long long SFDemuxer::Init(const char* filename, Flag flag)
+	long long SFDecoder::Init(const char* filename, Flag flag)
 	{
 		Uninit();
-		_impl = new(std::nothrow) SFDemuxerImpl();
+		_impl = new(std::nothrow) SFDecoderImpl();
 		if (_impl == NULL)
 			return -1;
 		_impl->_filename = filename;
@@ -116,13 +116,13 @@ namespace pioneer
 			if (avcodec_open2(_impl->_videoCodecCtx, videoCodec, NULL) != 0 && Uninit())
 				return -12;
 		}
-		SDL_Thread* thread = SDL_CreateThread(SFDemuxerImpl::DecodeThread, "Decoder", _impl);
+		SDL_Thread* thread = SDL_CreateThread(SFDecoderImpl::DecodeThread, "Decoder", _impl);
 		if (thread == NULL && Uninit())
 			return -13;
         return 0;
 	}
 
-	bool SFDemuxer::Uninit()
+	bool SFDecoder::Uninit()
 	{
 		if (_impl != NULL)
 		{

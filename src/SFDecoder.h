@@ -2,7 +2,7 @@
 
 namespace pioneer
 {
-	class SFDemuxer
+	class SFDecoder
 	{
 	public:
         enum Flag
@@ -13,14 +13,14 @@ namespace pioneer
         };
 
 	public:
-		SFDemuxer();
-		~SFDemuxer();
+		SFDecoder();
+		~SFDecoder();
 		long long Init(const char* filename, Flag flag = Default);
 		bool Uninit();
 
 	private:
-		class SFDemuxerImpl;
-		SFDemuxerImpl* _impl;
+		class SFDecoderImpl;
+		SFDecoderImpl* _impl;
 	};
 }
 
