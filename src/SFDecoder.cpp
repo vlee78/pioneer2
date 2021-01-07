@@ -39,6 +39,13 @@ namespace pioneer
 		AVRational _commonTimebase;
 		AVRational _audioTimebase;
 		AVRational _videoTimebase;
+		bool _looping;
+		SDL_Thread* _thread;
+
+		static int DecodeThread(void* param)
+		{
+			return 0;
+		}
 	};
 
 	SFDemuxer::SFDemuxer()
@@ -66,6 +73,8 @@ namespace pioneer
 		_impl->_commonTimebase = { 0, 0 };
 		_impl->_audioTimebase = { 0, 0 };
 		_impl->_videoTimebase = { 0, 0 };
+		_impl->_looping = true;
+		_impl->_thread = NULL;
 
 		if (avformat_open_input(&_impl->_demuxFormatCtx, _impl->_filename.c_str(), NULL, NULL) != 0 && Uninit())
 			return -2;
@@ -107,41 +116,25 @@ namespace pioneer
 			if (avcodec_open2(_impl->_videoCodecCtx, videoCodec, NULL) != 0 && Uninit())
 				return -12;
 		}
-
-		SDL_Thread* thread = SDL_CreateThread(SFPlayerImpl::MainThread, "SFPlayer::MainThread", _impl);
-
-
-
-        /*
-		_impl->_filename = filename;
-        _impl->_flag = flag;
-        _impl->_time = 0;
-        _impl->_state = Closed;
-        _impl->_ts = std::chrono::high_resolution_clock::now().time_since_epoch().count();
-        _impl->_looping = true;
-        _impl->_errorCode = 0;
-        _impl->_mainthread = SDL_CreateThread(SFPlayerImpl::MainThread, "SFPlayer::MainThread", _impl);
-        if (_impl->_mainthread == NULL)
-        {
-            Uninit();
-            return -2;
-        }*/
+		SDL_Thread* thread = SDL_CreateThread(SFDemuxerImpl::DecodeThread, "Decoder", _impl);
+		if (thread == NULL && Uninit())
+			return -13;
         return 0;
 	}
 
 	bool SFDemuxer::Uninit()
-	{/*
+	{
 		if (_impl != NULL)
 		{
 			_impl->_looping = false;
-			if (_impl->_mainthread != NULL)
+			if (_impl->_thread != NULL)
 			{
-				SDL_WaitThread(_impl->_mainthread, NULL);
-				_impl->_mainthread = NULL;
+				SDL_WaitThread(_impl->_thread, NULL);
+				_impl->_thread = NULL;
 			}
 			delete _impl;
 			_impl = NULL;
-		}*/
+		}
 		return true;
 	}
 }
