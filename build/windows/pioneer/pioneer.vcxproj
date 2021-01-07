@@ -23,6 +23,7 @@
     <ClCompile Include="..\..\..\src\Pioneer2.cpp" />
     <ClCompile Include="..\..\..\src\SFDecoder.cpp" />
     <ClCompile Include="..\..\..\src\SFPlayer.cpp" />
+    <ClCompile Include="..\..\..\src\SFReplayer.cpp" />
     <ClCompile Include="..\..\..\src\SFUtils.cpp" />
     <ClCompile Include="..\..\..\src\tutorial03.cpp" />
     <ClCompile Include="..\..\..\src\tutorial05.cpp" />
@@ -33,6 +34,7 @@
     <ClInclude Include="..\..\..\src\Pioneer2.h" />
     <ClInclude Include="..\..\..\src\SFDecoder.h" />
     <ClInclude Include="..\..\..\src\SFPlayer.h" />
+    <ClInclude Include="..\..\..\src\SFReplayer.h" />
     <ClInclude Include="..\..\..\src\SFUtils.h" />
     <ClInclude Include="..\..\..\src\tutorial03.h" />
     <ClInclude Include="..\..\..\src\tutorial05.h" />

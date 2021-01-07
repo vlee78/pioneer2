@@ -310,4 +310,18 @@ namespace pioneer
 		}
 		return true;
 	}
+
+	AVStream* SFDecoder::GetAudioStream()
+	{
+		if (_impl == NULL)
+			return NULL;
+		return _impl->_audioStream;
+	}
+	
+	AVStream* SFDecoder::GetVideoStream()
+	{
+		if (_impl == NULL)
+			return NULL;
+		return _impl->_videoStream;
+	}
 }

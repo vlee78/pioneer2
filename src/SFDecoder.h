@@ -35,6 +35,9 @@ namespace pioneer
 		long long Init(const char* filename, Flag flag = Default);
 		bool Uninit();
 
+		AVStream* GetAudioStream();
+		AVStream* GetVideoStream();
+
 		bool Forward(long long timestamp);
 		AVFrame* DequeueAudio();
 		AVFrame* DequeueVideo();
