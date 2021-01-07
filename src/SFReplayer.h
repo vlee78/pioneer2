@@ -7,9 +7,9 @@ namespace pioneer
 	public:
 		enum Flag
 		{
-			Audio	= 1,
-			Video	= 2,
-			Both	= 3,
+			Default = 0,
+			NoAudio = 1,
+			NoVideo = 2,
 		};
 
 		enum State
@@ -21,7 +21,7 @@ namespace pioneer
 
 		SFReplayer();
 		~SFReplayer();
-		long long Init(const char* filename, Flag flag = Both);
+		long long Init(const char* filename, Flag flag = Default);
 		bool Uninit();
 
 	private:

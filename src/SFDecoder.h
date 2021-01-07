@@ -24,9 +24,10 @@ namespace pioneer
 
 		enum State
 		{
-			Buffering	= 0,
-			Ready		= 1,
-			Closeed		= 2,
+			Closed		= 0,
+			Buffering	= 1,
+			Ready		= 2,
+			Eof			= 3,
 		};
 
 	public:
@@ -38,7 +39,11 @@ namespace pioneer
 		AVStream* GetAudioStream();
 		AVStream* GetVideoStream();
 
-		bool Forward(long long timestamp);
+		long long Forward(long long timestamp);
+		long long GetTimestamp();
+		AVRational* GetTimebase();
+		State GetState();
+
 		AVFrame* DequeueAudio();
 		AVFrame* DequeueVideo();
 

@@ -25,7 +25,7 @@ namespace pioneer
 	class SFDecoder::SFDecoderImpl
 	{
 	public:
-		std::string _filename;
+		State _state;
 		AVFormatContext* _demuxFormatCtx;
 		AVStream* _audioStream;
 		AVStream* _videoStream;
@@ -35,7 +35,6 @@ namespace pioneer
 		AVRational _audioTimebase;
 		AVRational _videoTimebase;
 		bool _looping;
-		bool _eof;
 		SDL_Thread* _thread;
 		long long _timestamp;
 		long long _errorcode;
@@ -51,7 +50,7 @@ namespace pioneer
 			AVFrame* videoFrame = NULL;
 			while (impl->_looping)
 			{
-				if (impl->_eof)
+				if (impl->_state == Eof)
 				{
 					SDL_Delay(100);
 					continue;
@@ -61,6 +60,8 @@ namespace pioneer
 				long long videoTailTimestamp = (impl->_videoFrames.size() == 0 ? -1 : SFUtils::TimestampToTimestamp(impl->_videoFrames.back()->pts, &impl->_audioTimebase, &impl->_commonTimebase));
 				if (audioTailTimestamp >= thresholdTimestamp && videoTailTimestamp >= thresholdTimestamp)
 				{
+					if (impl->_state == Buffering)
+						impl->_state = Ready;
 					SDL_Delay(0);
 					continue;
 				}
@@ -183,7 +184,7 @@ namespace pioneer
 					}
 					else if (ret == AVERROR_EOF)
 					{
-						impl->_eof = true;
+						impl->_state = Eof;
 					}
 					else
 					{
@@ -230,7 +231,7 @@ namespace pioneer
 		_impl = new(std::nothrow) SFDecoderImpl();
 		if (_impl == NULL)
 			return -1;
-		_impl->_filename = filename;
+		_impl->_state = Closed;
 		_impl->_demuxFormatCtx = NULL;
 		_impl->_audioStream = NULL;
 		_impl->_videoStream = NULL;
@@ -240,12 +241,11 @@ namespace pioneer
 		_impl->_audioTimebase = { 0, 0 };
 		_impl->_videoTimebase = { 0, 0 };
 		_impl->_looping = true;
-		_impl->_eof = false;
 		_impl->_thread = NULL;
 		_impl->_timestamp = 0;
 		_impl->_errorcode = 0;
 		
-		if (avformat_open_input(&_impl->_demuxFormatCtx, _impl->_filename.c_str(), NULL, NULL) != 0 && Uninit())
+		if (avformat_open_input(&_impl->_demuxFormatCtx, filename, NULL, NULL) != 0 && Uninit())
 			return -2;
 		if (avformat_find_stream_info(_impl->_demuxFormatCtx, NULL) < 0 && Uninit())
 			return -3;
@@ -285,8 +285,9 @@ namespace pioneer
 			if (avcodec_open2(_impl->_videoCodecCtx, videoCodec, NULL) != 0 && Uninit())
 				return -12;
 		}
-		SDL_Thread* thread = SDL_CreateThread(SFDecoderImpl::DecodeThread, "Decoder", _impl);
-		if (thread == NULL && Uninit())
+		_impl->_state = Buffering;
+		_impl->_thread = SDL_CreateThread(SFDecoderImpl::DecodeThread, "Decoder", _impl);
+		if (_impl->_thread == NULL && Uninit())
 			return -13;
         return 0;
 	}
@@ -323,5 +324,64 @@ namespace pioneer
 		if (_impl == NULL)
 			return NULL;
 		return _impl->_videoStream;
+	}
+
+	long long SFDecoder::Forward(long long timestamp)
+	{
+		if (_impl == NULL || timestamp < 0)
+			return -1;
+		_impl->_timestamp += timestamp;
+		return _impl->_timestamp;
+	}
+
+	long long SFDecoder::GetTimestamp()
+	{
+		if (_impl == NULL)
+			return -1;
+		return _impl->_timestamp;
+	}
+
+	SFDecoder::State SFDecoder::GetState()
+	{
+		if (_impl == NULL)
+			return Closed;
+		return _impl->_state;
+	}
+
+	AVRational* SFDecoder::GetTimebase()
+	{
+		if (_impl == NULL)
+			return NULL;
+		return &_impl->_commonTimebase;
+	}
+
+	AVFrame* SFDecoder::DequeueAudio()
+	{
+		if (_impl == NULL || _impl->_audioStream == NULL || _impl->_state == Buffering)
+			return NULL;
+		if (_impl->_audioFrames.size() == 0)
+		{
+			if (_impl->_state == Ready)
+				_impl->_state = Buffering;
+			return NULL;
+		}
+		AVFrame* frame = _impl->_audioFrames.front();
+		_impl->_audioFrames.pop_front();
+		return frame;
+	}
+
+	AVFrame* SFDecoder::DequeueVideo()
+	{
+		if (_impl == NULL || _impl->_videoStream == NULL || _impl->_state == Buffering)
+			return NULL;
+		if (_impl->_videoFrames.size() == 0)
+		{
+			if (_impl->_state == Ready)
+				_impl->_state = Buffering;
+			return NULL;
+		}
+		AVFrame* frame = _impl->_videoFrames.front();
+		_impl->_videoFrames.pop_front();
+		return frame;
 	}
 }

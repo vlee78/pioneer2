@@ -36,6 +36,8 @@ namespace pioneer
 			SFReplayerImpl* _impl;
 			AVStream* _audioStream;
 			AVStream* _videoStream;
+			AVFrame* _audioFrame;
+			AVFrame* _videoFrame;
 			SDL_Window* _renderWindow;
 			SDL_Renderer* _renderRenderer;
 			SDL_Texture* _renderTexture;
@@ -44,7 +46,83 @@ namespace pioneer
 
 		static void AudioDevice(void* userdata, Uint8* stream, int len)
 		{
+			Desc* desc = (Desc*)userdata;
+			memset(stream, 0, len);
+			int sampleRate = desc->_audioStream->codecpar[desc->_audioStream->index].sample_rate;
+			short* buffer0 = ((short*)stream) + 0;
+			short* buffer1 = ((short*)stream) + 1;
+			int bufchs = 2;
+			int bufoff = 0;
+			int bufmax = len / sizeof(short);
 
+			AVFrame*& frame = desc->_audioFrame;
+			while (desc->_impl->_looping)
+			{
+				if (frame == NULL)
+					frame = desc->_impl->_decoder.DequeueAudio();
+				if (frame == NULL)
+					break;
+				AVSampleFormat format = (AVSampleFormat)frame->format;
+				int channels = frame->channels;
+				if ((sampleRate != frame->sample_rate || format != AV_SAMPLE_FMT_FLTP) && error(desc, -201))
+					break;
+				int framemax = frame->nb_samples;
+				int frameoff = frame->width;
+				if (channels == 6)
+				{
+					float* buf0 = (float*)frame->data[0];
+					float* buf1 = (float*)frame->data[1];
+					float* buf2 = (float*)frame->data[2];
+					float* buf3 = (float*)frame->data[3];
+					float* buf4 = (float*)frame->data[4];
+					float* buf5 = (float*)frame->data[5];
+					for (; frameoff < framemax && bufoff < bufmax; frameoff++, bufoff += bufchs)
+					{
+						float val0 = buf0[frameoff] + buf2[frameoff] + buf3[frameoff] + buf4[frameoff];
+						float val1 = buf1[frameoff] + buf2[frameoff] + buf3[frameoff] + buf5[frameoff];
+						int check0 = (int)(val0 * 32768.0f);
+						int check1 = (int)(val1 * 32768.0f);
+						check0 = (check0 < -32768 ? -32768 : (check0 > 32767 ? 32767 : check0));
+						check1 = (check1 < -32768 ? -32768 : (check1 > 32767 ? 32767 : check1));
+						buffer0[bufoff] = (short)check0;
+						buffer1[bufoff] = (short)check1;
+					}
+				}
+				else if (channels == 2)
+				{
+					float* buf0 = (float*)frame->data[0];
+					float* buf1 = (float*)frame->data[1];
+					for (; frameoff < framemax && bufoff < bufmax; frameoff++, bufoff += bufchs)
+					{
+						float val0 = buf0[frameoff];
+						float val1 = buf1[frameoff];
+						int check0 = (int)(val0 * 32768.0f);
+						int check1 = (int)(val1 * 32768.0f);
+						check0 = (check0 < -32768 ? -32768 : (check0 > 32767 ? 32767 : check0));
+						check1 = (check1 < -32768 ? -32768 : (check1 > 32767 ? 32767 : check1));
+						buffer0[bufoff] = (short)check0;
+						buffer1[bufoff] = (short)check1;
+					}
+				}
+				else
+				{
+					desc->_impl->_errorCode = -202;
+					desc->_impl->_looping = false;
+					return;
+				}
+				frame->width = frameoff;//音频帧内的已经读取输出的偏移,单位为frame
+				if (frameoff >= framemax)
+				{
+					av_frame_unref(frame);
+					av_frame_free(&frame);
+					frame = NULL;
+				}
+				if (bufoff >= bufmax)
+					break;
+			}
+			long long samples = bufoff / bufchs;//总共消耗了frame queue多少sample
+			long long shift = SFUtils::SamplesToTimestamp(samples, sampleRate, desc->_impl->_decoder.GetTimebase());
+			desc->_impl->_decoder.Forward(shift);
 		}
 
 		static int RenderThread(void* param)

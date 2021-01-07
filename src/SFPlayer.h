@@ -13,24 +13,18 @@ namespace pioneer
 			Playing		= 3,
 		};
         
-        enum Flag
-        {
-            Default = 0,
-            NoAudio = 1,
-            NoVideo = 2,
-        };
+		enum Flag
+		{
+			Default = 0,
+			NoAudio = 1,
+			NoVideo = 2,
+		};
 
 	public:
 		SFPlayer();
 		~SFPlayer();
 		long long Init(const char* filename, Flag flag = Default);
 		void Uninit();
-
-		State GetState();
-		long long PausePlay(bool play);
-		float GetCurrent();
-		float GetTotal();
-		long long SeekTo(float seek);
 
 	private:
 		class SFPlayerImpl;

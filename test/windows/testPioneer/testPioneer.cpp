@@ -12,6 +12,7 @@
 #include "tutorial03.h"
 #include "tutorial05.h"
 #include "tutorial07.h"
+#include "SFReplayer.h"
 
 int main(int argc, char* argv[])
 {
@@ -36,14 +37,17 @@ int main(int argc, char* argv[])
 	//return pioneer::Pioneer2::testSDL(argc, argv);
 	//return pioneer::Pioneer2::testSDLSample(argc, argv);
 
-	pioneer::SFPlayer player;
-	player.Init("test.mov", pioneer::SFPlayer::Default);
+	//pioneer::SFPlayer player;
+	//player.Init("test.mov", pioneer::SFPlayer::Default);
 	//player.Init("sample.mp4", pioneer::SFPlayer::Default);
 	//player.Init("california.mkv", pioneer::SFPlayer::Default);
 	//player.Init("nevada.mkv");
 	//player.Init("idaho.mkv");
 	//player.Init("mojito.mp3", pioneer::SFPlayer::NoVideo);
 	
+	pioneer::SFReplayer replayer;
+	replayer.Init("test.mov", pioneer::SFReplayer::Default);
+
 	getchar();
 	return 0;
 }
