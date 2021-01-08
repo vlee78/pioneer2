@@ -149,6 +149,8 @@ namespace pioneer
 			desc._impl = impl;
 			desc._audioStream = NULL;
 			desc._videoStream = NULL;
+			desc._audioFrame = NULL;
+			desc._videoFrame = NULL;
 			desc._renderWindow = NULL;
 			desc._renderRenderer = NULL;
 			desc._renderTexture = NULL;
@@ -238,6 +240,9 @@ namespace pioneer
 		_impl = new(std::nothrow) SFReplayerImpl();
 		if (_impl == NULL)
 			return -1;
+		_impl->_looping = true;
+		_impl->_errorCode = 0;
+		_impl->_mainThread = NULL;
 		if (_impl->_decoder.Init(filename, (SFDecoder::Flag)flag) != 0 && Uninit())
 			return -2;
 		_impl->_mainThread = SDL_CreateThread(SFReplayerImpl::MainThread, "MainThread", _impl);
