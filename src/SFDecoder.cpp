@@ -43,6 +43,7 @@ namespace pioneer
 		long long _errorcode;
 		std::list<AVFrame*> _audioFrames;
 		std::list<AVFrame*> _videoFrames;
+		SFMutex _mutex;
 
 		static bool error(SFDecoderImpl* impl, long long errorCode)
 		{
