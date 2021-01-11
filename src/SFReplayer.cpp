@@ -154,6 +154,7 @@ namespace pioneer
 			desc._renderWindow = NULL;
 			desc._renderRenderer = NULL;
 			desc._renderTexture = NULL;
+			desc._renderThread = NULL;
 
 			if (SDL_Init(SDL_INIT_AUDIO | SDL_INIT_VIDEO | SDL_INIT_TIMER) != 0 && error(&desc, -1))
 				goto end;
@@ -213,13 +214,13 @@ namespace pioneer
 			if (desc._renderTexture != NULL) SDL_DestroyTexture(desc._renderTexture);
 			if (desc._renderRenderer != NULL) SDL_RenderClear(desc._renderRenderer);
 			if (desc._renderWindow != NULL) SDL_DestroyWindow(desc._renderWindow);
+			SDL_Quit();
 			desc._renderThread = NULL;
 			desc._audioStream = NULL;
 			desc._videoStream = NULL;
 			desc._renderWindow = NULL;
 			desc._renderRenderer = NULL;
 			desc._renderTexture = NULL;
-			SDL_Quit();
 			return 0;
 		}
 	};

@@ -43,7 +43,6 @@ namespace pioneer
 		long long _errorcode;
 		std::list<AVFrame*> _audioFrames;
 		std::list<AVFrame*> _videoFrames;
-		SFMutex _mutex;
 
 		static bool error(SFDecoderImpl* impl, long long errorCode)
 		{
@@ -60,8 +59,10 @@ namespace pioneer
 			AVFrame* videoFrame = NULL;
 			while (impl->_looping)
 			{
+				__mutex.Enter();
 				if (impl->_state == Eof && impl->_audioFrames.size() == 0 && impl->_videoFrames.size())
 				{
+					__mutex.Leave();
 					SDL_Delay(100);
 					continue;
 				}
@@ -72,15 +73,19 @@ namespace pioneer
 				{
 					if (impl->_state == Buffering)
 						impl->_state = Ready;
+					__mutex.Leave();
 					SDL_Delay(0);
 					continue;
 				}
+				__mutex.Leave();
 				if (packet == NULL && (packet = av_packet_alloc()) == NULL && error(impl, -1))
 					break;
 				int ret = av_read_frame(impl->_demuxFormatCtx, packet);
 				if (ret == AVERROR_EOF)
 				{
+					__mutex.Enter();
 					impl->_state = Eof;
+					__mutex.Leave();
 					continue;
 				}
 				else if (ret != 0 && error(impl, -2))
@@ -101,7 +106,9 @@ namespace pioneer
 						long long timestamp = SFUtils::TimestampToTimestamp(audioFrame->pts, &impl->_audioTimebase, &impl->_commonTimebase);
 						if (timestamp >= impl->_timestamp)
 						{
+							__mutex.Enter();
 							impl->_audioFrames.push_back(audioFrame);
+							__mutex.Leave();
 							audioFrame = NULL;
 						}
 						else
@@ -128,7 +135,9 @@ namespace pioneer
 						long long timestamp = SFUtils::TimestampToTimestamp(videoFrame->pts, &impl->_videoTimebase, &impl->_commonTimebase);
 						if (timestamp >= impl->_timestamp)
 						{
+							__mutex.Enter();
 							impl->_videoFrames.push_back(videoFrame);
+							__mutex.Leave();
 							videoFrame = NULL;
 						}
 						else
@@ -161,19 +170,19 @@ namespace pioneer
 
 	SFDecoder::SFDecoder()
 	{
-		SFMutexScoped lock(&__mutex);
+		//SFMutexScoped lock(&__mutex);
 		_impl = NULL;
 	}
 
 	SFDecoder::~SFDecoder()
 	{
-		SFMutexScoped lock(&__mutex);
+		//SFMutexScoped lock(&__mutex);
 		Uninit();
 	}
 
 	long long SFDecoder::Init(const char* filename, Flag flag)
 	{
-		SFMutexScoped lock(&__mutex);
+		//SFMutexScoped lock(&__mutex);
 		Uninit();
 		_impl = new(std::nothrow) SFDecoderImpl();
 		if (_impl == NULL)
@@ -241,20 +250,23 @@ namespace pioneer
 
 	bool SFDecoder::Uninit()
 	{
-		SFMutexScoped lock(&__mutex);
+		__mutex.Enter();
 		if (_impl != NULL)
 		{
 			_impl->_looping = false;
+			__mutex.Leave();
 			if (_impl->_thread != NULL)
 			{
 				SDL_WaitThread(_impl->_thread, NULL);
 				_impl->_thread = NULL;
 			}
+			__mutex.Enter();
 			for (auto it = _impl->_audioFrames.begin(); it != _impl->_audioFrames.end(); av_frame_unref(*it), av_frame_free(&*it), it++);
 			for (auto it = _impl->_videoFrames.begin(); it != _impl->_videoFrames.end(); av_frame_unref(*it), av_frame_free(&*it), it++);
 			delete _impl;
 			_impl = NULL;
 		}
+		__mutex.Leave();
 		return true;
 	}
 
