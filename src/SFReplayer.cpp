@@ -205,8 +205,16 @@ namespace pioneer
 					{
 					case SDL_QUIT:
 						desc._impl->_looping = false;
-						continue;
+						break;
 					};
+				}
+				else
+				{
+					if (desc._impl->_decoder.GetState() == SFDecoder::Eof && desc._impl->_decoder.GetAudioQueueSize() == 0 && desc._impl->_decoder.GetVideoQueueSize() == 0)
+					{
+						desc._impl->_looping = false;
+						break;
+					}
 				}
 			}
 		end:

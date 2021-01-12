@@ -61,7 +61,7 @@ namespace pioneer
 			while (impl->_looping)
 			{
 				__mutex.Enter();
-				if (impl->_state == Eof && impl->_audioFrames.size() == 0 && impl->_videoFrames.size())
+				if (impl->_state == Eof)
 				{
 					__mutex.Leave();
 					SDL_Delay(100);
@@ -171,19 +171,19 @@ namespace pioneer
 
 	SFDecoder::SFDecoder()
 	{
-		//SFMutexScoped lock(&__mutex);
+		SFMutexScoped lock(&__lock);
 		_impl = NULL;
 	}
 
 	SFDecoder::~SFDecoder()
 	{
-		//SFMutexScoped lock(&__mutex);
+		SFMutexScoped lock(&__lock);
 		Uninit();
 	}
 
 	long long SFDecoder::Init(const char* filename, Flag flag)
 	{
-		//SFMutexScoped lock(&__mutex);
+		SFMutexScoped lock(&__lock);
 		Uninit();
 		_impl = new(std::nothrow) SFDecoderImpl();
 		if (_impl == NULL)
@@ -251,29 +251,26 @@ namespace pioneer
 
 	bool SFDecoder::Uninit()
 	{
-		__mutex.Enter();
+		SFMutexScoped lock(&__lock);
 		if (_impl != NULL)
 		{
 			_impl->_looping = false;
-			__mutex.Leave();
 			if (_impl->_thread != NULL)
 			{
 				SDL_WaitThread(_impl->_thread, NULL);
 				_impl->_thread = NULL;
 			}
-			__mutex.Enter();
 			for (auto it = _impl->_audioFrames.begin(); it != _impl->_audioFrames.end(); av_frame_unref(*it), av_frame_free(&*it), it++);
 			for (auto it = _impl->_videoFrames.begin(); it != _impl->_videoFrames.end(); av_frame_unref(*it), av_frame_free(&*it), it++);
 			delete _impl;
 			_impl = NULL;
 		}
-		__mutex.Leave();
 		return true;
 	}
 
 	AVStream* SFDecoder::GetAudioStream()
 	{
-		SFMutexScoped lock(&__mutex);
+		SFMutexScoped lock(&__lock);
 		if (_impl == NULL)
 			return NULL;
 		return _impl->_audioStream;
@@ -281,7 +278,7 @@ namespace pioneer
 	
 	AVStream* SFDecoder::GetVideoStream()
 	{
-		SFMutexScoped lock(&__mutex);
+		SFMutexScoped lock(&__lock);
 		if (_impl == NULL)
 			return NULL;
 		return _impl->_videoStream;
@@ -289,7 +286,8 @@ namespace pioneer
 
 	long long SFDecoder::Forward(long long timestamp)
 	{
-		SFMutexScoped lock(&__mutex);
+		SFMutexScoped lock(&__lock);
+		SFMutexScoped mutex(&__mutex);
 		if (_impl == NULL || timestamp < 0)
 			return -1;
 		_impl->_timestamp += timestamp;
@@ -298,7 +296,8 @@ namespace pioneer
 
 	long long SFDecoder::GetTimestamp()
 	{
-		SFMutexScoped lock(&__mutex);
+		SFMutexScoped lock(&__lock);
+		SFMutexScoped mutex(&__mutex);
 		if (_impl == NULL)
 			return -1;
 		return _impl->_timestamp;
@@ -306,7 +305,8 @@ namespace pioneer
 
 	SFDecoder::State SFDecoder::GetState()
 	{
-		SFMutexScoped lock(&__mutex);
+		SFMutexScoped lock(&__lock);
+		SFMutexScoped mutex(&__mutex);
 		if (_impl == NULL)
 			return Closed;
 		return _impl->_state;
@@ -314,15 +314,35 @@ namespace pioneer
 
 	AVRational* SFDecoder::GetTimebase()
 	{
-		SFMutexScoped lock(&__mutex);
+		SFMutexScoped lock(&__lock);
+		SFMutexScoped mutex(&__mutex);
 		if (_impl == NULL)
 			return NULL;
 		return &_impl->_commonTimebase;
 	}
 
+	int SFDecoder::GetAudioQueueSize()
+	{
+		SFMutexScoped lock(&__lock);
+		SFMutexScoped mutex(&__mutex);
+		if (_impl == NULL || _impl->_audioStream == NULL)
+			return 0;
+		return (int)_impl->_audioFrames.size();
+	}
+
+	int SFDecoder::GetVideoQueueSize()
+	{
+		SFMutexScoped lock(&__lock);
+		SFMutexScoped mutex(&__mutex);
+		if (_impl == NULL || _impl->_videoStream == NULL)
+			return 0;
+		return (int)_impl->_videoFrames.size();
+	}
+
 	AVFrame* SFDecoder::DequeueAudio()
 	{
-		SFMutexScoped lock(&__mutex);
+		SFMutexScoped lock(&__lock);
+		SFMutexScoped mutex(&__mutex);
 		if (_impl == NULL || _impl->_audioStream == NULL || _impl->_state == Buffering)
 			return NULL;
 		if (_impl->_audioFrames.size() == 0)
@@ -338,7 +358,8 @@ namespace pioneer
 
 	AVFrame* SFDecoder::DequeueVideo()
 	{
-		SFMutexScoped lock(&__mutex);
+		SFMutexScoped lock(&__lock);
+		SFMutexScoped mutex(&__mutex);
 		if (_impl == NULL || _impl->_videoStream == NULL || _impl->_state == Buffering)
 			return NULL;
 		if (_impl->_videoFrames.size() == 0)

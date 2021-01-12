@@ -46,6 +46,8 @@ namespace pioneer
 
 		AVFrame* DequeueAudio();
 		AVFrame* DequeueVideo();
+		int GetAudioQueueSize();
+		int GetVideoQueueSize();
 
 	private:
 		class SFDecoderImpl;
