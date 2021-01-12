@@ -48,7 +48,7 @@ namespace pioneer
 		{
 			Desc* desc = (Desc*)userdata;
 			memset(stream, 0, len);
-			int sampleRate = desc->_audioStream->codecpar[desc->_audioStream->index].sample_rate;
+			int sampleRate = desc->_audioStream->codecpar->sample_rate;
 			short* buffer0 = ((short*)stream) + 0;
 			short* buffer1 = ((short*)stream) + 1;
 			int bufchs = 2;
@@ -164,7 +164,7 @@ namespace pioneer
 			{
 				SDL_AudioSpec want;
 				SDL_zero(want);
-				want.freq = desc._audioStream->codecpar[desc._audioStream->index].sample_rate;
+				want.freq = desc._audioStream->codecpar->sample_rate;
 				want.format = AUDIO_S16SYS;
 				want.channels = 2;
 				want.samples = 1024;
