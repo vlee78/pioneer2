@@ -171,19 +171,19 @@ namespace pioneer
 
 	SFDecoder::SFDecoder()
 	{
-		SFMutexScoped lock(&__mutex);
+		//SFMutexScoped lock(&__mutex);
 		_impl = NULL;
 	}
 
 	SFDecoder::~SFDecoder()
 	{
-		SFMutexScoped lock(&__mutex);
+		//SFMutexScoped lock(&__mutex);
 		Uninit();
 	}
 
 	long long SFDecoder::Init(const char* filename, Flag flag)
 	{
-		SFMutexScoped lock(&__mutex);
+		//SFMutexScoped lock(&__mutex);
 		Uninit();
 		_impl = new(std::nothrow) SFDecoderImpl();
 		if (_impl == NULL)

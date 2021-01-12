@@ -220,7 +220,7 @@ namespace pioneer
 			desc._renderRenderer = NULL;
 			desc._renderTexture = NULL;
 			desc._audioStream = NULL;
-			desc._videoStream = NULL;			
+			desc._videoStream = NULL;
 			return 0;
 		}
 	};
