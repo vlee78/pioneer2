@@ -64,51 +64,97 @@ namespace pioneer
 					break;
 				AVSampleFormat format = (AVSampleFormat)frame->format;
 				int channels = frame->channels;
-				if ((sampleRate != frame->sample_rate || format != AV_SAMPLE_FMT_FLTP) && error(desc, -201))
+				if (sampleRate != frame->sample_rate && error(desc, -201))
 					break;
 				int framemax = frame->nb_samples;
 				int frameoff = frame->width;
-				if (channels == 6)
+				if (format == AV_SAMPLE_FMT_FLTP)
 				{
-					float* buf0 = (float*)frame->data[0];
-					float* buf1 = (float*)frame->data[1];
-					float* buf2 = (float*)frame->data[2];
-					float* buf3 = (float*)frame->data[3];
-					float* buf4 = (float*)frame->data[4];
-					float* buf5 = (float*)frame->data[5];
-					for (; frameoff < framemax && bufoff < bufmax; frameoff++, bufoff += bufchs)
+					if (channels == 1)
 					{
-						float val0 = buf0[frameoff] + buf2[frameoff] + buf3[frameoff] + buf4[frameoff];
-						float val1 = buf1[frameoff] + buf2[frameoff] + buf3[frameoff] + buf5[frameoff];
-						int check0 = (int)(val0 * 32768.0f);
-						int check1 = (int)(val1 * 32768.0f);
-						check0 = (check0 < -32768 ? -32768 : (check0 > 32767 ? 32767 : check0));
-						check1 = (check1 < -32768 ? -32768 : (check1 > 32767 ? 32767 : check1));
-						buffer0[bufoff] = (short)check0;
-						buffer1[bufoff] = (short)check1;
+						float* buf = (float*)frame->data[0];
+						for (; frameoff < framemax && bufoff < bufmax; frameoff++, bufoff += bufchs)
+						{
+							float val = buf[frameoff];
+							int check = (int)(val * 32768.0f);
+							check = (check < -32768 ? -32768 : (check > 32767 ? 32767 : check));
+							buffer0[bufoff] = (short)check;
+							buffer1[bufoff] = (short)check;
+						}
+					}
+					else if (channels == 2)
+					{
+						float* buf0 = (float*)frame->data[0];
+						float* buf1 = (float*)frame->data[1];
+						for (; frameoff < framemax && bufoff < bufmax; frameoff++, bufoff += bufchs)
+						{
+							float val0 = buf0[frameoff];
+							float val1 = buf1[frameoff];
+							int check0 = (int)(val0 * 32768.0f);
+							int check1 = (int)(val1 * 32768.0f);
+							check0 = (check0 < -32768 ? -32768 : (check0 > 32767 ? 32767 : check0));
+							check1 = (check1 < -32768 ? -32768 : (check1 > 32767 ? 32767 : check1));
+							buffer0[bufoff] = (short)check0;
+							buffer1[bufoff] = (short)check1;
+						}
+					}
+					else if (channels == 6)
+					{
+						float* buf0 = (float*)frame->data[0];
+						float* buf1 = (float*)frame->data[1];
+						float* buf2 = (float*)frame->data[2];
+						float* buf3 = (float*)frame->data[3];
+						float* buf4 = (float*)frame->data[4];
+						float* buf5 = (float*)frame->data[5];
+						for (; frameoff < framemax && bufoff < bufmax; frameoff++, bufoff += bufchs)
+						{
+							float val0 = buf0[frameoff] + buf2[frameoff] + buf3[frameoff] + buf4[frameoff];
+							float val1 = buf1[frameoff] + buf2[frameoff] + buf3[frameoff] + buf5[frameoff];
+							int check0 = (int)(val0 * 32768.0f);
+							int check1 = (int)(val1 * 32768.0f);
+							check0 = (check0 < -32768 ? -32768 : (check0 > 32767 ? 32767 : check0));
+							check1 = (check1 < -32768 ? -32768 : (check1 > 32767 ? 32767 : check1));
+							buffer0[bufoff] = (short)check0;
+							buffer1[bufoff] = (short)check1;
+						}
+					}
+					else
+					{
+						error(desc, -202);
+						break;
 					}
 				}
-				else if (channels == 2)
+				else if (format == AV_SAMPLE_FMT_S16P)
 				{
-					float* buf0 = (float*)frame->data[0];
-					float* buf1 = (float*)frame->data[1];
-					for (; frameoff < framemax && bufoff < bufmax; frameoff++, bufoff += bufchs)
+					if (channels == 1)
 					{
-						float val0 = buf0[frameoff];
-						float val1 = buf1[frameoff];
-						int check0 = (int)(val0 * 32768.0f);
-						int check1 = (int)(val1 * 32768.0f);
-						check0 = (check0 < -32768 ? -32768 : (check0 > 32767 ? 32767 : check0));
-						check1 = (check1 < -32768 ? -32768 : (check1 > 32767 ? 32767 : check1));
-						buffer0[bufoff] = (short)check0;
-						buffer1[bufoff] = (short)check1;
+						short* buf0 = (short*)frame->data[0];
+						for (; frameoff < framemax && bufoff < bufmax; frameoff++, bufoff += bufchs)
+						{
+							buffer0[bufoff] = buf0[frameoff];
+							buffer1[bufoff] = buf0[frameoff];
+						}
+					}
+					if (channels == 2)
+					{
+						short* buf0 = (short*)frame->data[0];
+						short* buf1 = (short*)frame->data[1];
+						for (; frameoff < framemax && bufoff < bufmax; frameoff++, bufoff += bufchs)
+						{
+							buffer0[bufoff] = buf0[frameoff];
+							buffer1[bufoff] = buf1[frameoff];
+						}
+					}
+					else
+					{
+						error(desc, -203);
+						break;
 					}
 				}
 				else
 				{
-					desc->_impl->_errorCode = -202;
-					desc->_impl->_looping = false;
-					return;
+					error(desc, -204);
+					break;
 				}
 				frame->width = frameoff;//音频帧内的已经读取输出的偏移,单位为frame
 				if (frameoff >= framemax)
@@ -229,6 +275,16 @@ namespace pioneer
 			desc._renderTexture = NULL;
 			desc._audioStream = NULL;
 			desc._videoStream = NULL;
+			if (desc._audioFrame != NULL)
+			{
+				av_frame_unref(desc._audioFrame);
+				av_frame_free(&desc._audioFrame);
+			}
+			if (desc._videoFrame != NULL)
+			{
+				av_frame_unref(desc._videoFrame);
+				av_frame_free(&desc._videoFrame);
+			}
 			return 0;
 		}
 	};

@@ -46,11 +46,12 @@ int main(int argc, char* argv[])
 	//player.Init("mojito.mp3", pioneer::SFPlayer::NoVideo);
 	
 	pioneer::SFReplayer replayer;
+	//replayer.Init("test.mov", pioneer::SFReplayer::NoVideo);
+	//replayer.Init("mojito.mp3", pioneer::SFReplayer::NoVideo);
 	replayer.Init("test.mov", pioneer::SFReplayer::NoVideo);
 	//replayer.Init("mojito.mp3", pioneer::SFReplayer::NoVideo);
-	//replayer.Init("test.mov", pioneer::SFReplayer::NoVideo);
-	//replayer.Init("mojito.mp3", pioneer::SFReplayer::NoVideo);
-	//replayer.Init("test.mov", pioneer::SFReplayer::NoVideo);
+	//replayer.Init("sample.mp4", pioneer::SFReplayer::NoVideo);
+	//replayer.Init("sample1.mp2", pioneer::SFReplayer::NoVideo);
 
 	getchar();
 	return 0;

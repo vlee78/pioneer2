@@ -11,3 +11,5 @@ build/windows/pioneer/pioneer.VC.db
 .DS_Store
 /build/mac/pioneer2/pioneer2.xcodeproj/project.xcworkspace/xcuserdata/shengcunli.xcuserdatad/UserInterfaceState.xcuserstate
 /build/mac/pioneer2/pioneer2.xcodeproj/xcuserdata/shengcunli.xcuserdatad/xcschemes/xcschememanagement.plist
+/run/pioneer/Oklahoma.mkv
+/run/pioneer/log.txt
