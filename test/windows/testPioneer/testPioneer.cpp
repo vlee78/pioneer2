@@ -48,6 +48,9 @@ int main(int argc, char* argv[])
 	pioneer::SFReplayer replayer;
 	replayer.Init("test.mov", pioneer::SFReplayer::NoVideo);
 	//replayer.Init("mojito.mp3", pioneer::SFReplayer::NoVideo);
+	//replayer.Init("test.mov", pioneer::SFReplayer::NoVideo);
+	//replayer.Init("mojito.mp3", pioneer::SFReplayer::NoVideo);
+	//replayer.Init("test.mov", pioneer::SFReplayer::NoVideo);
 
 	getchar();
 	return 0;
