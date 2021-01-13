@@ -69,7 +69,7 @@ namespace pioneer
 				}
 				long long thresholdTimestamp = impl->_timestamp + SFUtils::SecondsToTimestamp(5.0, &impl->_commonTimebase);
 				long long audioTailTimestamp = (impl->_audioStream == NULL ? LLONG_MAX : (impl->_audioFrames.size() == 0 ? -1 : SFUtils::TimestampToTimestamp(impl->_audioFrames.back()->pts, &impl->_audioTimebase, &impl->_commonTimebase)));
-				long long videoTailTimestamp = (impl->_videoStream == NULL ? LLONG_MAX : (impl->_videoFrames.size() == 0 ? -1 : SFUtils::TimestampToTimestamp(impl->_videoFrames.back()->pts, &impl->_audioTimebase, &impl->_commonTimebase)));
+				long long videoTailTimestamp = (impl->_videoStream == NULL ? LLONG_MAX : (impl->_videoFrames.size() == 0 ? -1 : SFUtils::TimestampToTimestamp(impl->_videoFrames.back()->pts, &impl->_videoTimebase, &impl->_commonTimebase)));
 				if (audioTailTimestamp >= thresholdTimestamp && videoTailTimestamp >= thresholdTimestamp)
 				{
 					if (impl->_state == Buffering)
@@ -312,14 +312,27 @@ namespace pioneer
 		return _impl->_state;
 	}
 
-	AVRational* SFDecoder::GetTimebase()
+	AVRational SFDecoder::GetCommonTimebase()
 	{
-		SFMutexScoped lock(&__lock);
-		SFMutexScoped mutex(&__mutex);
 		if (_impl == NULL)
-			return NULL;
-		return &_impl->_commonTimebase;
+			return{ 0, 0 };
+		return _impl->_commonTimebase;
 	}
+
+	AVRational SFDecoder::GetAudioTimebase()
+	{
+		if (_impl == NULL)
+			return{ 0, 0 };
+		return _impl->_audioTimebase;
+	}
+
+	AVRational SFDecoder::GetVideoTimebase()
+	{
+		if (_impl == NULL)
+			return{ 0, 0 };
+		return _impl->_videoTimebase;
+	}
+
 
 	int SFDecoder::GetAudioQueueSize()
 	{

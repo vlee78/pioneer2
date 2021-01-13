@@ -167,16 +167,53 @@ namespace pioneer
 					break;
 			}
 			long long samples = bufoff / bufchs;//总共消耗了frame queue多少sample
-			long long shift = SFUtils::SamplesToTimestamp(samples, sampleRate, desc->_impl->_decoder.GetTimebase());
+			AVRational commonTimebase = desc->_impl->_decoder.GetCommonTimebase();
+			long long shift = SFUtils::SamplesToTimestamp(samples, sampleRate, &commonTimebase);
 			desc->_impl->_decoder.Forward(shift);
 		}
 
 		static int RenderThread(void* param)
 		{
-			SFReplayerImpl* impl = (SFReplayerImpl*)param;
-			while (impl->_looping)
+			Desc* desc = (Desc*)param;
+			AVFrame*& frame = desc->_videoFrame;
+			AVRational commonTimebase = desc->_impl->_decoder.GetCommonTimebase();
+			AVRational videoTimebase = desc->_impl->_decoder.GetVideoTimebase();
+			while (desc->_impl->_looping)
 			{
-
+				if (frame == NULL)
+					frame = desc->_impl->_decoder.DequeueVideo();
+				if (frame == NULL)
+				{
+					SDL_Delay(0);
+					continue;
+				}
+				long long timestamp = SFUtils::TimestampToTimestamp(frame->best_effort_timestamp, &videoTimebase, &commonTimebase);
+				long long duration = SFUtils::TimestampToTimestamp(frame->pkt_duration, &videoTimebase, &commonTimebase);
+				if (timestamp <= desc->_impl->_decoder.GetTimestamp())
+				{
+					if (SDL_UpdateYUVTexture(desc->_renderTexture, NULL, frame->data[0], frame->linesize[0], frame->data[1], 
+						frame->linesize[1], frame->data[2], frame->linesize[2]) != 0 && error(desc, -401))
+						continue;
+					if (SDL_RenderCopy(desc->_renderRenderer, desc->_renderTexture, NULL, NULL) != 0 && error(desc, -402))
+						continue;
+					SDL_RenderPresent(desc->_renderRenderer);
+					av_frame_unref(frame);
+					av_frame_free(&frame);
+					frame = NULL;
+				}
+				if (desc->_audioStream == NULL)
+				{
+					desc->_impl->_decoder.Forward(duration);
+				/*
+				 long long nanoTs = std::chrono::high_resolution_clock::now().time_since_epoch().count();
+				 long long nanoDiff = nanoTs - desc->_impl->_ts;
+				 double diffSecs = nanoDiff / (double)1000000000l;
+				 if (nanoDiff > 0)
+				 {
+				 desc->_impl->_time += diffSecs;
+				 desc->_impl->_ts = nanoTs;
+				 }*/
+				}
 			}
 			return 0;
 		}

@@ -41,7 +41,9 @@ namespace pioneer
 
 		long long Forward(long long timestamp);
 		long long GetTimestamp();
-		AVRational* GetTimebase();
+		AVRational GetCommonTimebase();
+		AVRational GetAudioTimebase();
+		AVRational GetVideoTimebase();
 		State GetState();
 
 		AVFrame* DequeueAudio();
