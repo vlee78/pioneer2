@@ -2,6 +2,7 @@
 
 #include "SFUtils.h"
 #include <stdio.h>
+#include <chrono>
 
 namespace pioneer
 {
@@ -15,7 +16,7 @@ namespace pioneer
 
 	int SFUtils::LeastCommonMultiple(int a, int b)
 	{
-		return a * b / GreatestCommonDivisor(a, b);
+		return (int)(((long long)a * b) / GreatestCommonDivisor(a, b));
 	}
 
 	long long SFUtils::SecondsToSamples(double seconds, int sampleRate)
@@ -50,8 +51,33 @@ namespace pioneer
 		return timestamp * timebase->num / (double)timebase->den;
 	}
 
+	long long SFUtils::TimestampToMs(long long timestamp, AVRational* timebase)
+	{
+		return timestamp * 1000 * timebase->num / timebase->den;
+	}
+
 	long long SFUtils::SamplesToTimestamp(long long samples, int sampleRate, AVRational* timebase)
 	{
 		return (samples * timebase->den) / ((long long)sampleRate * timebase->num);
+	}
+
+	long long SFUtils::TimestampToSamples(long long timestamp, int sampleRate, AVRational* timebase)
+	{
+		return timestamp * sampleRate * timebase->num / timebase->den;
+	}
+
+	long long SFUtils::GetTickNanos()
+	{
+		return std::chrono::high_resolution_clock::now().time_since_epoch().count();
+	}
+
+	long long SFUtils::GetTickMs()
+	{
+		return std::chrono::high_resolution_clock::now().time_since_epoch().count() / 1000000;
+	}
+
+	double SFUtils::GetTickSeconds()
+	{
+		return std::chrono::high_resolution_clock::now().time_since_epoch().count() / 1000000000.0;
 	}
 }

@@ -25,7 +25,17 @@ namespace pioneer
 
 		static double TimestampToSeconds(long long timestamp, AVRational* timebase);
 
+		static long long TimestampToMs(long long timestamp, AVRational* timebase);
+
 		static long long SamplesToTimestamp(long long samples, int sampleRate, AVRational* timebase);
+
+		static long long TimestampToSamples(long long timestamp, int sampleRate, AVRational* timebase);
+
+		static long long GetTickNanos();
+
+		static long long GetTickMs();
+		
+		static double GetTickSeconds();
 	};
 }
 

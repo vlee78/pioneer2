@@ -42,6 +42,11 @@ namespace pioneer
 			SDL_Renderer* _renderRenderer;
 			SDL_Texture* _renderTexture;
 			SDL_Thread* _renderThread;
+
+			AVRational _commonTimebase;
+			AVRational _audioTimebase;
+			AVRational _videoTimebase;
+			long long _startTick;
 		};
 
 		static void AudioDevice(void* userdata, Uint8* stream, int len)
@@ -56,6 +61,7 @@ namespace pioneer
 			int bufmax = len / sizeof(short);
 
 			AVFrame*& frame = desc->_audioFrame;
+			int nb_samples = 0;
 			while (desc->_impl->_looping)
 			{
 				if (frame == NULL)
@@ -64,6 +70,7 @@ namespace pioneer
 					break;
 				AVSampleFormat format = (AVSampleFormat)frame->format;
 				int channels = frame->channels;
+				nb_samples = frame->nb_samples;
 				if (sampleRate != frame->sample_rate && error(desc, -201))
 					break;
 				int framemax = frame->nb_samples;
@@ -156,7 +163,7 @@ namespace pioneer
 					error(desc, -204);
 					break;
 				}
-				frame->width = frameoff;//音频帧内的已经读取输出的偏移,单位为frame
+				frame->width = frameoff;
 				if (frameoff >= framemax)
 				{
 					av_frame_unref(frame);
@@ -166,18 +173,28 @@ namespace pioneer
 				if (bufoff >= bufmax)
 					break;
 			}
-			long long samples = bufoff / bufchs;//总共消耗了frame queue多少sample
-			AVRational commonTimebase = desc->_impl->_decoder.GetCommonTimebase();
-			long long shift = SFUtils::SamplesToTimestamp(samples, sampleRate, &commonTimebase);
-			desc->_impl->_decoder.Forward(shift);
+			if (bufoff > 0)
+			{
+				long long tick = SFUtils::GetTickMs();
+				if (desc->_startTick == 0)
+					desc->_startTick = tick;
+				static long long last_ms0 = 0;
+				long long ms0 = tick - desc->_startTick;
+				long long ms1 = SFUtils::TimestampToMs(desc->_impl->_decoder.GetTimestamp(), &desc->_commonTimebase);
+				printf("nb_samples: %d\n", nb_samples);
+				printf("%lld\t%lld\t%lld\t%lld\n", ms0, ms0 - last_ms0, ms1, ms0 - ms1);
+				last_ms0 = ms0;
+
+				long long samples = bufoff / bufchs;//总共消耗了frame queue多少sample
+				long long shift = SFUtils::SamplesToTimestamp(samples, sampleRate, &desc->_commonTimebase);
+				desc->_impl->_decoder.Forward(shift);
+			}
 		}
 
 		static int RenderThread(void* param)
 		{
 			Desc* desc = (Desc*)param;
 			AVFrame*& frame = desc->_videoFrame;
-			AVRational commonTimebase = desc->_impl->_decoder.GetCommonTimebase();
-			AVRational videoTimebase = desc->_impl->_decoder.GetVideoTimebase();
 			while (desc->_impl->_looping)
 			{
 				if (frame == NULL)
@@ -187,8 +204,8 @@ namespace pioneer
 					SDL_Delay(0);
 					continue;
 				}
-				long long timestamp = SFUtils::TimestampToTimestamp(frame->best_effort_timestamp, &videoTimebase, &commonTimebase);
-				long long duration = SFUtils::TimestampToTimestamp(frame->pkt_duration, &videoTimebase, &commonTimebase);
+				long long timestamp = SFUtils::TimestampToTimestamp(frame->best_effort_timestamp, &desc->_videoTimebase, &desc->_commonTimebase);
+				long long duration = SFUtils::TimestampToTimestamp(frame->pkt_duration, &desc->_videoTimebase, &desc->_commonTimebase);
 				if (timestamp <= desc->_impl->_decoder.GetTimestamp())
 				{
 					if (SDL_UpdateYUVTexture(desc->_renderTexture, NULL, frame->data[0], frame->linesize[0], frame->data[1], 
@@ -204,15 +221,14 @@ namespace pioneer
 				if (desc->_audioStream == NULL)
 				{
 					desc->_impl->_decoder.Forward(duration);
-				/*
-				 long long nanoTs = std::chrono::high_resolution_clock::now().time_since_epoch().count();
-				 long long nanoDiff = nanoTs - desc->_impl->_ts;
-				 double diffSecs = nanoDiff / (double)1000000000l;
-				 if (nanoDiff > 0)
-				 {
-				 desc->_impl->_time += diffSecs;
-				 desc->_impl->_ts = nanoTs;
-				 }*/
+					//long long nanoTs = std::chrono::high_resolution_clock::now().time_since_epoch().count();
+					//long long nanoDiff = nanoTs - desc->_impl->_ts;
+					//double diffSecs = nanoDiff / (double)1000000000l;
+					//if (nanoDiff > 0)
+					//{
+					//	desc->_impl->_time += diffSecs;
+					//	desc->_impl->_ts = nanoTs;
+					//}
 				}
 			}
 			return 0;
@@ -238,7 +254,10 @@ namespace pioneer
 			desc._renderRenderer = NULL;
 			desc._renderTexture = NULL;
 			desc._renderThread = NULL;
-
+			desc._commonTimebase = impl->_decoder.GetCommonTimebase();
+			desc._audioTimebase = impl->_decoder.GetAudioTimebase();
+			desc._videoTimebase = impl->_decoder.GetVideoTimebase();
+			desc._startTick = 0;
 			if (SDL_Init(SDL_INIT_AUDIO | SDL_INIT_VIDEO | SDL_INIT_TIMER) != 0 && error(&desc, -1))
 				goto end;
 			desc._audioStream = impl->_decoder.GetAudioStream();
@@ -250,7 +269,7 @@ namespace pioneer
 				want.freq = desc._audioStream->codecpar->sample_rate;
 				want.format = AUDIO_S16SYS;
 				want.channels = 2;
-				want.samples = 1024;
+				want.samples = impl->_decoder.GetAudioFrameSize();
 				want.callback = SFReplayerImpl::AudioDevice;
 				want.userdata = &desc;
 				SDL_AudioSpec real;
@@ -277,7 +296,6 @@ namespace pioneer
 				if (desc._renderThread == NULL && error(&desc, -6))
 					goto end;
 			}
-
 
 			while (desc._impl->_looping)
 			{

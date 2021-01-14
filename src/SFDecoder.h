@@ -44,6 +44,7 @@ namespace pioneer
 		AVRational GetCommonTimebase();
 		AVRational GetAudioTimebase();
 		AVRational GetVideoTimebase();
+		int GetAudioFrameSize();
 		State GetState();
 
 		AVFrame* DequeueAudio();

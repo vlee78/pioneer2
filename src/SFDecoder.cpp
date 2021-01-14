@@ -38,6 +38,7 @@ namespace pioneer
 		AVRational _commonTimebase;
 		AVRational _audioTimebase;
 		AVRational _videoTimebase;
+		int _audioFrameSize;
 		bool _looping;
 		SDL_Thread* _thread;
 		long long _timestamp;
@@ -181,6 +182,58 @@ namespace pioneer
 		Uninit();
 	}
 
+	static int CalcAudioFrameSize(const char* filename)
+	{
+		AVFormatContext* demuxFormatCtx = NULL;
+		AVStream* audioStream = NULL;
+		int frameSize = 0;
+		if (avformat_open_input(&demuxFormatCtx, filename, NULL, NULL) != 0)
+			goto end;
+		if (avformat_find_stream_info(demuxFormatCtx, NULL) < 0)
+			goto end;
+		for (int i = 0; i < (int)demuxFormatCtx->nb_streams; i++)
+		{
+			if (demuxFormatCtx->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_AUDIO)
+			{
+				audioStream = demuxFormatCtx->streams[i];
+				break;
+			}
+		}
+		if (audioStream == NULL)
+			goto end;
+		frameSize = audioStream->codecpar->frame_size;
+		if (frameSize == 0)
+		{
+			AVPacket packet;
+			while (true)
+			{
+				if (av_read_frame(demuxFormatCtx, &packet) != 0)
+				{
+					av_packet_unref(&packet);
+					break;
+				}
+				if (packet.stream_index != audioStream->index)
+				{
+					av_packet_unref(&packet);
+					continue;
+				}
+				frameSize = (int)SFUtils::TimestampToSamples(packet.duration, audioStream->codecpar->sample_rate, &audioStream->time_base);
+				av_packet_unref(&packet);
+				break;
+			}
+		}
+	end:
+		audioStream = NULL;
+		if (demuxFormatCtx != NULL)
+		{
+			avformat_close_input(&demuxFormatCtx);
+			demuxFormatCtx = NULL;
+		}
+		if (frameSize == 0)
+			frameSize = 1536;
+		return frameSize;
+	}
+
 	long long SFDecoder::Init(const char* filename, Flag flag)
 	{
 		SFMutexScoped lock(&__lock);
@@ -197,11 +250,12 @@ namespace pioneer
 		_impl->_commonTimebase = { 0, 0 };
 		_impl->_audioTimebase = { 0, 0 };
 		_impl->_videoTimebase = { 0, 0 };
+		_impl->_audioFrameSize = CalcAudioFrameSize(filename);
 		_impl->_looping = true;
 		_impl->_thread = NULL;
 		_impl->_timestamp = 0;
 		_impl->_errorcode = 0;
-		
+
 		if (avformat_open_input(&_impl->_demuxFormatCtx, filename, NULL, NULL) != 0 && Uninit())
 			return -2;
 		if (avformat_find_stream_info(_impl->_demuxFormatCtx, NULL) < 0 && Uninit())
@@ -215,7 +269,6 @@ namespace pioneer
 		}
 		if (((_impl->_audioStream == NULL && _impl->_videoStream == NULL) || (_impl->_audioStream == NULL && flag == NoVideo) || (_impl->_videoStream == NULL && flag == NoAudio)) && Uninit())
 			return -4;
-		_impl->_commonTimebase = SFUtils::CommonTimebase((_impl->_audioStream == NULL ? NULL : &_impl->_audioStream->time_base), (_impl->_videoStream == NULL ? NULL : &_impl->_videoStream->time_base));
 		if (_impl->_audioStream != NULL)
 		{
 			_impl->_audioTimebase = _impl->_audioStream->time_base;
@@ -242,6 +295,8 @@ namespace pioneer
 			if (avcodec_open2(_impl->_videoCodecCtx, videoCodec, NULL) != 0 && Uninit())
 				return -12;
 		}
+		_impl->_commonTimebase = SFUtils::CommonTimebase((_impl->_audioStream == NULL ? NULL : &_impl->_audioStream->time_base), (_impl->_videoStream == NULL ? NULL : &_impl->_videoStream->time_base));
+
 		_impl->_state = Buffering;
 		_impl->_thread = SDL_CreateThread(SFDecoderImpl::DecodeThread, "Decoder", _impl);
 		if (_impl->_thread == NULL && Uninit())
@@ -333,6 +388,12 @@ namespace pioneer
 		return _impl->_videoTimebase;
 	}
 
+	int SFDecoder::GetAudioFrameSize()
+	{
+		if (_impl == NULL)
+			return 0;
+		return _impl->_audioFrameSize;
+	}
 
 	int SFDecoder::GetAudioQueueSize()
 	{
