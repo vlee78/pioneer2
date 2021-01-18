@@ -10,6 +10,7 @@
 #include <vector>
 #include <list>
 #include <chrono>
+#include <thread>
 
 extern "C"
 {
@@ -53,6 +54,110 @@ namespace pioneer
 			return true;
 		}
 
+
+		static long long Seek(SFDecoderImpl* impl, double seekto)
+		{
+			long long errorCode = 0;
+			if (impl->_videoStream != NULL)
+			{
+				long long timestamp = SFUtils::SecondsToTimestamp(seekto, &impl->_videoTimebase);
+				long long video_key_pts = -1;
+				long long video_min_pts = -1;
+				long long lastseek = -1;
+				long long seekts = timestamp;
+				AVPacket* packet = NULL;
+				while (true)
+				{
+					if (seekts >= 0)
+					{
+						video_key_pts = -1;
+						video_min_pts = -1;
+						if (lastseek >= 0 && seekts >= lastseek)
+						{
+							errorCode = -1;
+							break;
+						}
+						if (av_seek_frame(impl->_demuxFormatCtx, impl->_videoStream->index, seekts, AVSEEK_FLAG_BACKWARD) != 0)
+						{
+							errorCode = -2;
+							break;
+						}
+						lastseek = seekts;
+						seekts = -1;
+					}
+					packet = av_packet_alloc();
+					if (packet == NULL)
+					{
+						errorCode = -3;
+						break;
+					}
+					bool hit = false;
+					int ret = av_read_frame(impl->_demuxFormatCtx, packet);
+					if (ret == 0)
+					{
+						if (impl->_audioStream && packet->stream_index == impl->_audioStream->index)
+						{
+						}
+						else if (impl->_videoStream && packet->stream_index == impl->_videoStream->index)
+						{
+							if (video_key_pts >= 0 && packet->flags & AV_PKT_FLAG_KEY)
+								hit = true;
+							if (video_key_pts == -1 && packet->flags & AV_PKT_FLAG_KEY)
+							{
+								video_key_pts = packet->pts;
+								if (video_key_pts <= timestamp)
+									hit = true;
+							}
+							if (video_min_pts == -1 || packet->pts < video_min_pts)
+								video_min_pts = packet->pts;
+						}
+					}
+					else if (ret == AVERROR_EOF)
+					{
+						if (video_key_pts == -1)
+						{
+							errorCode = -4;
+							break;
+						}
+						hit = true;
+					}
+					else
+					{
+						errorCode = -4;
+						break;
+					}
+					av_packet_unref(packet);
+					av_packet_free(&packet);
+					packet = NULL;
+					if (hit)
+					{
+						if (video_key_pts < 0)
+						{
+							errorCode = -5;
+							break;
+						}
+						if (video_key_pts <= timestamp)
+							break;
+						seekts = video_min_pts - 1;
+					}
+				}
+				if (packet != NULL)
+				{
+					av_packet_unref(packet);
+					av_packet_free(&packet);
+					packet = NULL;
+				}
+				if (av_seek_frame(impl->_demuxFormatCtx, impl->_videoStream->index, lastseek, AVSEEK_FLAG_BACKWARD) != 0)
+					errorCode = -6;
+			}
+			else if (impl->_audioStream)
+			{
+			}
+			if (errorCode == 0)
+				impl->_timestamp = SFUtils::SecondsToTimestamp(seekto, &impl->_commonTimebase);
+			return errorCode;
+		}
+
 		static int DecodeThread(void* param)
 		{
 			SFDecoderImpl* impl = (SFDecoderImpl*)param;
@@ -65,7 +170,7 @@ namespace pioneer
 				if (impl->_state == Eof)
 				{
 					__mutex.Leave();
-					SDL_Delay(100);
+					SDL_Delay(1000);
 					continue;
 				}
 				long long thresholdTimestamp = impl->_timestamp + SFUtils::SecondsToTimestamp(5.0, &impl->_commonTimebase);
@@ -76,7 +181,7 @@ namespace pioneer
 					if (impl->_state == Buffering)
 						impl->_state = Ready;
 					__mutex.Leave();
-					SDL_Delay(0);
+					SDL_Delay(5);
 					continue;
 				}
 				__mutex.Leave();
@@ -120,6 +225,7 @@ namespace pioneer
 							audioFrame = NULL;
 						}
 					}
+					SDL_Delay(1);
 				}
 				else if (impl->_videoStream && packet->stream_index == impl->_videoStream->index)
 				{
@@ -149,6 +255,7 @@ namespace pioneer
 							videoFrame = NULL;
 						}
 					}
+					SDL_Delay(1);
 				}
 				av_packet_unref(packet);
 				av_packet_free(&packet);
@@ -298,6 +405,9 @@ namespace pioneer
 		_impl->_commonTimebase = SFUtils::CommonTimebase((_impl->_audioStream == NULL ? NULL : &_impl->_audioStream->time_base), (_impl->_videoStream == NULL ? NULL : &_impl->_videoStream->time_base));
 
 		_impl->_state = Buffering;
+
+		//SFDecoderImpl::Seek(_impl, 30.0);
+
 		_impl->_thread = SDL_CreateThread(SFDecoderImpl::DecodeThread, "Decoder", _impl);
 		if (_impl->_thread == NULL && Uninit())
 			return -13;
@@ -341,8 +451,8 @@ namespace pioneer
 
 	long long SFDecoder::Forward(long long timestamp)
 	{
-		SFMutexScoped lock(&__lock);
-		SFMutexScoped mutex(&__mutex);
+		//SFMutexScoped lock(&__lock);
+		//SFMutexScoped mutex(&__mutex);
 		if (_impl == NULL || timestamp < 0)
 			return -1;
 		_impl->_timestamp += timestamp;
@@ -351,8 +461,8 @@ namespace pioneer
 
 	long long SFDecoder::GetTimestamp()
 	{
-		SFMutexScoped lock(&__lock);
-		SFMutexScoped mutex(&__mutex);
+		//SFMutexScoped lock(&__lock);
+		//SFMutexScoped mutex(&__mutex);
 		if (_impl == NULL)
 			return -1;
 		return _impl->_timestamp;
@@ -360,8 +470,8 @@ namespace pioneer
 
 	SFDecoder::State SFDecoder::GetState()
 	{
-		SFMutexScoped lock(&__lock);
-		SFMutexScoped mutex(&__mutex);
+		//SFMutexScoped lock(&__lock);
+		//SFMutexScoped mutex(&__mutex);
 		if (_impl == NULL)
 			return Closed;
 		return _impl->_state;
@@ -415,8 +525,8 @@ namespace pioneer
 
 	AVFrame* SFDecoder::DequeueAudio()
 	{
-		SFMutexScoped lock(&__lock);
-		SFMutexScoped mutex(&__mutex);
+		//SFMutexScoped lock(&__lock);
+		//SFMutexScoped mutex(&__mutex);
 		if (_impl == NULL || _impl->_audioStream == NULL || _impl->_state == Buffering)
 			return NULL;
 		if (_impl->_audioFrames.size() == 0)
@@ -432,8 +542,8 @@ namespace pioneer
 
 	AVFrame* SFDecoder::DequeueVideo()
 	{
-		SFMutexScoped lock(&__lock);
-		SFMutexScoped mutex(&__mutex);
+		//SFMutexScoped lock(&__lock);
+		//SFMutexScoped mutex(&__mutex);
 		if (_impl == NULL || _impl->_videoStream == NULL || _impl->_state == Buffering)
 			return NULL;
 		if (_impl->_videoFrames.size() == 0)

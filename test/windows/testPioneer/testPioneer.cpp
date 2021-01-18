@@ -16,18 +16,17 @@
 
 int main(int argc, char* argv[])
 {
-	/*
 	{
 		char* params[] =
 		{
 			"tutorial.exe",
-			"test.mov",
+			"lyl.mp4",
 			"2000"
 		};
 		argc = 3;
 		argv = params;
 		
-	}*/
+	}
 	//tutorial03::tutorial03(argc, argv);
 	//tutorial05::tutorial05(argc, argv);
 	//tutorial07::tutorial07(argc, argv);

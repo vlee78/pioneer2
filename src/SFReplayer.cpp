@@ -23,6 +23,16 @@ extern "C"
 
 namespace pioneer
 {
+	enum ThreadSync
+	{
+		kSyncWillSpin	= 0,
+		kSyncDidSpin	= 1,
+		kSyncWillRun	= 2,
+		kSyncDidRun		= 3,
+		kSyncWillEnd	= 4,
+		kSyncDidEnd		= 5,
+	};
+
 	class SFReplayer::SFReplayerImpl
 	{
 	public:
@@ -30,6 +40,15 @@ namespace pioneer
 		long long _errorCode;
 		SFDecoder _decoder;
 		SDL_Thread* _mainThread;
+
+		ThreadSync _syncDecoder;
+
+		//0:要求空转
+		//1:实际空转
+		//2:要求运转
+		//3:实际运转
+		//4:要求退出
+		//5:最终退出
 
 		struct Desc
 		{
@@ -51,6 +70,7 @@ namespace pioneer
 
 		static void AudioDevice(void* userdata, Uint8* stream, int len)
 		{
+			long long head = SFUtils::GetTickNanos();
 			Desc* desc = (Desc*)userdata;
 			memset(stream, 0, len);
 			int sampleRate = desc->_audioStream->codecpar->sample_rate;
@@ -181,7 +201,7 @@ namespace pioneer
 				static long long last_ms0 = 0;
 				long long ms0 = tick - desc->_startTick;
 				long long ms1 = SFUtils::TimestampToMs(desc->_impl->_decoder.GetTimestamp(), &desc->_commonTimebase);
-				printf("nb_samples: %d\n", nb_samples);
+				//printf("nb_samples: %d\n", nb_samples);
 				printf("%lld\t%lld\t%lld\t%lld\n", ms0, ms0 - last_ms0, ms1, ms0 - ms1);
 				last_ms0 = ms0;
 
@@ -189,6 +209,7 @@ namespace pioneer
 				long long shift = SFUtils::SamplesToTimestamp(samples, sampleRate, &desc->_commonTimebase);
 				desc->_impl->_decoder.Forward(shift);
 			}
+			printf("diff: %lld\n", (SFUtils::GetTickNanos() - head));
 		}
 
 		static int RenderThread(void* param)
@@ -197,11 +218,11 @@ namespace pioneer
 			AVFrame*& frame = desc->_videoFrame;
 			while (desc->_impl->_looping)
 			{
+				SDL_Delay(15);
 				if (frame == NULL)
 					frame = desc->_impl->_decoder.DequeueVideo();
 				if (frame == NULL)
 				{
-					SDL_Delay(0);
 					continue;
 				}
 				long long timestamp = SFUtils::TimestampToTimestamp(frame->best_effort_timestamp, &desc->_videoTimebase, &desc->_commonTimebase);
@@ -214,6 +235,7 @@ namespace pioneer
 					if (SDL_RenderCopy(desc->_renderRenderer, desc->_renderTexture, NULL, NULL) != 0 && error(desc, -402))
 						continue;
 					SDL_RenderPresent(desc->_renderRenderer);
+					
 					av_frame_unref(frame);
 					av_frame_free(&frame);
 					frame = NULL;
@@ -272,6 +294,7 @@ namespace pioneer
 				want.samples = impl->_decoder.GetAudioFrameSize();
 				want.callback = SFReplayerImpl::AudioDevice;
 				want.userdata = &desc;
+				want.padding = 52428;
 				SDL_AudioSpec real;
 				SDL_zero(real);
 				SDL_AudioDeviceID audioDeviceId = SDL_OpenAudioDevice(NULL, 0, &want, &real, 0);
@@ -283,7 +306,7 @@ namespace pioneer
 			{
 				int width = desc._videoStream->codecpar[desc._videoStream->index].width;
 				int height = desc._videoStream->codecpar[desc._videoStream->index].height;
-				desc._renderWindow = SDL_CreateWindow("RenderWindow", 100, 100, width / 2, height / 2, SDL_WINDOW_SHOWN);
+				desc._renderWindow = SDL_CreateWindow("RenderWindow", 100, 100, width, height, SDL_WINDOW_SHOWN);
 				if (desc._renderWindow == NULL && error(&desc, -3))
 					goto end;
 				desc._renderRenderer = SDL_CreateRenderer(desc._renderWindow, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);

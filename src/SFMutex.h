@@ -8,7 +8,7 @@ namespace pioneer
 	public:
 		SFMutex();
 		~SFMutex();
-		void Enter(bool yieldSpin = true);
+		void Enter(bool yieldSpin = false);
 		void Leave();
 
 	private:
@@ -19,7 +19,7 @@ namespace pioneer
 	class SFMutexScoped
 	{
 	public:
-		SFMutexScoped(SFMutex* mutex, bool yield = true);
+		SFMutexScoped(SFMutex* mutex, bool yield = false);
 		~SFMutexScoped();
 
 		void LeaveEnter(bool yield = true);
