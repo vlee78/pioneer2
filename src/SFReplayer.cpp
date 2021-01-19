@@ -33,6 +33,24 @@ namespace pioneer
 		kSyncDidEnd		= 5,
 	};
 
+	void fun()
+	{
+
+		while (true)
+		{
+			if (sync == kSyncWillSpin)
+			{
+				sync = kSyncDidSpin;
+			}
+
+			if (sync == kSyncDidSpin)
+			{
+
+			}
+		}
+
+	}
+
 	class SFReplayer::SFReplayerImpl
 	{
 	public:
