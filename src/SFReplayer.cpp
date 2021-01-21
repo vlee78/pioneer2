@@ -3,6 +3,7 @@
 #include "SFReplayer.h"
 #include "SFDecoder.h"
 #include "SFUtils.h"
+#include "SFQueue.h"
 #include "SDL.h"
 #include <stdio.h>
 #include <new>
@@ -23,33 +24,7 @@ extern "C"
 
 namespace pioneer
 {
-	enum ThreadSync
-	{
-		kSyncWillSpin	= 0,
-		kSyncDidSpin	= 1,
-		kSyncWillRun	= 2,
-		kSyncDidRun		= 3,
-		kSyncWillEnd	= 4,
-		kSyncDidEnd		= 5,
-	};
 
-	void fun()
-	{
-
-		while (true)
-		{
-			if (sync == kSyncWillSpin)
-			{
-				sync = kSyncDidSpin;
-			}
-
-			if (sync == kSyncDidSpin)
-			{
-
-			}
-		}
-
-	}
 
 	class SFReplayer::SFReplayerImpl
 	{
@@ -58,15 +33,6 @@ namespace pioneer
 		long long _errorCode;
 		SFDecoder _decoder;
 		SDL_Thread* _mainThread;
-
-		ThreadSync _syncDecoder;
-
-		//0:要求空转
-		//1:实际空转
-		//2:要求运转
-		//3:实际运转
-		//4:要求退出
-		//5:最终退出
 
 		struct Desc
 		{
@@ -347,11 +313,50 @@ namespace pioneer
 					{
 					case SDL_QUIT:
 						desc._impl->_looping = false;
+
+
+						SFMessageQueue queue;
+						queue.PushMessage({ kMsgQuit, 0, -1 });
+
 						break;
 					};
 				}
 				else
 				{
+					SFMessageQueue queue;
+					if (sync.syncRun())
+					{
+						if (queue.HasMessage())
+							sync.willSpin();
+					}
+					else if (sync.syncSpin())
+					{
+						SFMessage message;
+						while (queue.PopMessage(message))
+						{
+							if (message._id == kMsgPlay)
+							{
+							}
+							else if (message._id == kMsgPause)
+							{
+							}
+							case kMsgPause:
+								break;
+							case kMsgSeek:
+								break;
+							case kMsgQuit:
+								break;
+							};
+						}
+						sync.willRun();
+					}
+
+					
+
+
+
+
+
 					if (desc._impl->_decoder.GetState() == SFDecoder::Eof && desc._impl->_decoder.GetAudioQueueSize() == 0 && desc._impl->_decoder.GetVideoQueueSize() == 0)
 					{
 						desc._impl->_looping = false;
