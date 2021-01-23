@@ -25,6 +25,7 @@
     <ClCompile Include="..\..\..\src\SFMutex.cpp" />
     <ClCompile Include="..\..\..\src\SFPlayer.cpp" />
     <ClCompile Include="..\..\..\src\SFReplayer.cpp" />
+    <ClCompile Include="..\..\..\src\SFSync.cpp" />
     <ClCompile Include="..\..\..\src\SFUtils.cpp" />
     <ClCompile Include="..\..\..\src\tutorial03.cpp" />
     <ClCompile Include="..\..\..\src\tutorial05.cpp" />
@@ -37,6 +38,7 @@
     <ClInclude Include="..\..\..\src\SFMutex.h" />
     <ClInclude Include="..\..\..\src\SFPlayer.h" />
     <ClInclude Include="..\..\..\src\SFReplayer.h" />
+    <ClInclude Include="..\..\..\src\SFSync.h" />
     <ClInclude Include="..\..\..\src\SFUtils.h" />
     <ClInclude Include="..\..\..\src\tutorial03.h" />
     <ClInclude Include="..\..\..\src\tutorial05.h" />

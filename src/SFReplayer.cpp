@@ -4,6 +4,7 @@
 #include "SFDecoder.h"
 #include "SFUtils.h"
 #include "SFQueue.h"
+#include "SFSync.h"
 #include "SDL.h"
 #include <stdio.h>
 #include <new>
@@ -24,8 +25,6 @@ extern "C"
 
 namespace pioneer
 {
-
-
 	class SFReplayer::SFReplayerImpl
 	{
 	public:
@@ -240,6 +239,25 @@ namespace pioneer
 			return 0;
 		}
 
+		static int SdlThread(void* param)
+		{
+			Desc* desc = (Desc*)param;
+			while (desc->_impl->_looping)
+			{
+				SDL_Event event;
+				if (SDL_PollEvent(&event))
+				{
+					switch (event.type)
+					{
+					case SDL_QUIT:
+						desc->_impl->_looping = false;
+						break;
+					};
+				}
+			}
+			return 0;
+		}
+
 		static bool error(Desc* desc, long long errorCode)
 		{
 			desc->_impl->_looping = false;
@@ -304,6 +322,8 @@ namespace pioneer
 					goto end;
 			}
 
+			//SDL_CreateThread(SFReplayerImpl::SdlThread, "SdlThread", &desc);
+
 			while (desc._impl->_looping)
 			{
 				SDL_Event event;
@@ -313,50 +333,11 @@ namespace pioneer
 					{
 					case SDL_QUIT:
 						desc._impl->_looping = false;
-
-
-						SFMessageQueue queue;
-						queue.PushMessage({ kMsgQuit, 0, -1 });
-
 						break;
 					};
 				}
 				else
 				{
-					SFMessageQueue queue;
-					if (sync.syncRun())
-					{
-						if (queue.HasMessage())
-							sync.willSpin();
-					}
-					else if (sync.syncSpin())
-					{
-						SFMessage message;
-						while (queue.PopMessage(message))
-						{
-							if (message._id == kMsgPlay)
-							{
-							}
-							else if (message._id == kMsgPause)
-							{
-							}
-							case kMsgPause:
-								break;
-							case kMsgSeek:
-								break;
-							case kMsgQuit:
-								break;
-							};
-						}
-						sync.willRun();
-					}
-
-					
-
-
-
-
-
 					if (desc._impl->_decoder.GetState() == SFDecoder::Eof && desc._impl->_decoder.GetAudioQueueSize() == 0 && desc._impl->_decoder.GetVideoQueueSize() == 0)
 					{
 						desc._impl->_looping = false;
