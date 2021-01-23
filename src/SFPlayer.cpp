@@ -1,4 +1,6 @@
 #include "SFPlayer.h"
+#include "SFDecoder.h"
+#include "SFSync.h"
 #include <stdio.h>
 #include <new>
 #include <string>
@@ -23,6 +25,183 @@ extern "C"
 
 namespace pioneer
 {
+	class SFPlayer::SFPlayerImpl
+	{
+	public:
+		SFDecoder _decoder;
+		SFSync _sync;
+
+		struct Desc
+		{
+			SFPlayerImpl* _impl;
+			AVStream* _audioStream;
+			AVStream* _videoStream;
+			AVFrame* _audioFrame;
+			AVFrame* _videoFrame;
+			SDL_Window* _renderWindow;
+			SDL_Renderer* _renderRenderer;
+			SDL_Texture* _renderTexture;
+			SDL_Thread* _renderThread;
+
+			AVRational _commonTimebase;
+			AVRational _audioTimebase;
+			AVRational _videoTimebase;
+			long long _startTick;
+		};
+
+		static void AudioDevice(void* userdata, Uint8* stream, int len)
+		{
+
+		}
+
+		static void RenderThread(SFSync* sync, SFThread* thread, void* param)
+		{
+			while (sync->Loop(thread))
+			{
+			}
+		}
+
+		static void PollThread(SFSync* sync, SFThread* thread, void* param)
+		{
+			SFMsg msg;
+			while (sync->Poll(thread, msg))
+			{
+			}
+		}
+
+		static void MainThread(SFSync* sync, SFThread* thread, void* param)
+		{
+			SFPlayerImpl* impl = (SFPlayerImpl*)param;
+			Desc desc;
+			desc._impl = impl;
+			desc._audioStream = NULL;
+			desc._videoStream = NULL;
+			desc._audioFrame = NULL;
+			desc._videoFrame = NULL;
+			desc._renderWindow = NULL;
+			desc._renderRenderer = NULL;
+			desc._renderTexture = NULL;
+			desc._renderThread = NULL;
+			desc._commonTimebase = impl->_decoder.GetCommonTimebase();
+			desc._audioTimebase = impl->_decoder.GetAudioTimebase();
+			desc._videoTimebase = impl->_decoder.GetVideoTimebase();
+			desc._startTick = 0;
+			if (SDL_Init(SDL_INIT_AUDIO | SDL_INIT_VIDEO | SDL_INIT_TIMER) != 0 && sync->Error(-1, ""))
+				goto end;
+			desc._audioStream = impl->_decoder.GetAudioStream();
+			desc._videoStream = impl->_decoder.GetVideoStream();
+			if (desc._audioStream)
+			{
+				SDL_AudioSpec want;
+				SDL_zero(want);
+				want.freq = desc._audioStream->codecpar->sample_rate;
+				want.format = AUDIO_S16SYS;
+				want.channels = 2;
+				want.samples = impl->_decoder.GetAudioFrameSize();
+				want.callback = SFPlayerImpl::AudioDevice;
+				want.userdata = &desc;
+				want.padding = 52428;
+				SDL_AudioSpec real;
+				SDL_zero(real);
+				SDL_AudioDeviceID audioDeviceId = SDL_OpenAudioDevice(NULL, 0, &want, &real, 0);
+				if (audioDeviceId == 0 && sync->Error(-2, ""))
+					goto end;
+				//SDL_PauseAudioDevice(audioDeviceId, 0);
+			}
+			if (desc._videoStream)
+			{
+				int width = desc._videoStream->codecpar[desc._videoStream->index].width;
+				int height = desc._videoStream->codecpar[desc._videoStream->index].height;
+				desc._renderWindow = SDL_CreateWindow("RenderWindow", 100, 100, width, height, SDL_WINDOW_SHOWN);
+				if (desc._renderWindow == NULL && sync->Error(-3, ""))
+					goto end;
+				desc._renderRenderer = SDL_CreateRenderer(desc._renderWindow, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
+				if (desc._renderRenderer == NULL && sync->Error(-4, ""))
+					goto end;
+				desc._renderTexture = SDL_CreateTexture(desc._renderRenderer, SDL_PIXELFORMAT_IYUV, SDL_TEXTUREACCESS_STREAMING, width, height);
+				if (desc._renderTexture == NULL && sync->Error(-5, ""))
+					goto end;
+				if (sync->Spawn("RenderThread", SFPlayerImpl::RenderThread, &desc) == false && sync->Error(-6, ""))
+					goto end;
+			}
+			if (sync->Spawn("PollThread", SFPlayerImpl::PollThread, &desc) == false && sync->Error(-7, ""))
+				goto end;
+			if (sync->Loop(thread))
+			{
+				SDL_Event event;
+				if (SDL_PollEvent(&event))
+				{
+					switch (event.type)
+					{
+					case SDL_QUIT:
+						sync->Term();
+						break;
+					};
+				}
+			}
+		end:
+			if (desc._renderThread != NULL) SDL_WaitThread(desc._renderThread, NULL);
+			if (desc._renderTexture != NULL) SDL_DestroyTexture(desc._renderTexture);
+			if (desc._renderRenderer != NULL) SDL_RenderClear(desc._renderRenderer);
+			if (desc._renderWindow != NULL) SDL_DestroyWindow(desc._renderWindow);
+			SDL_Quit();
+			desc._renderThread = NULL;
+			desc._renderWindow = NULL;
+			desc._renderRenderer = NULL;
+			desc._renderTexture = NULL;
+			desc._audioStream = NULL;
+			desc._videoStream = NULL;
+			if (desc._audioFrame != NULL)
+			{
+				av_frame_unref(desc._audioFrame);
+				av_frame_free(&desc._audioFrame);
+			}
+			if (desc._videoFrame != NULL)
+			{
+				av_frame_unref(desc._videoFrame);
+				av_frame_free(&desc._videoFrame);
+			}
+		}
+	};
+
+	SFPlayer::SFPlayer()
+	{
+		_impl = NULL;
+	}
+	
+	SFPlayer::~SFPlayer()
+	{
+		Uninit();
+	}
+
+	long long SFPlayer::Init(const char* filename, Flag flag)
+	{
+		Uninit();
+		_impl = new(std::nothrow) SFPlayerImpl();
+		if (_impl == NULL)
+			return -1;
+		if (_impl->_sync.Init() != 0 && Uninit())
+			return -2;
+		if (_impl->_decoder.Init(filename, (SFDecoder::Flag)flag, &_impl->_sync) != 0 && Uninit())
+			return -3;
+		if (_impl->_sync.Spawn("MainThread", SFPlayerImpl::MainThread, _impl) != 0 && Uninit())
+			return -4;
+		return 0;
+	}
+
+	bool SFPlayer::Uninit()
+	{
+		if (_impl != NULL)
+		{
+			_impl->_sync.Uninit();
+			_impl->_decoder.Uninit();
+			delete _impl;
+			_impl = NULL;
+		}
+		return true;
+	}
+
+#ifdef _SSS_
     static const char* StateNames[] =
     {
         "Closed(0)",
@@ -1061,4 +1240,5 @@ namespace pioneer
 			_impl = NULL;
 		}
 	}
+#endif
 }

@@ -24,7 +24,7 @@ namespace pioneer
 		SFPlayer();
 		~SFPlayer();
 		long long Init(const char* filename, Flag flag = Default);
-		void Uninit();
+		bool Uninit();
 
 	private:
 		class SFPlayerImpl;

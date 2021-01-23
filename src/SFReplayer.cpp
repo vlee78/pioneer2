@@ -28,6 +28,9 @@ namespace pioneer
 	class SFReplayer::SFReplayerImpl
 	{
 	public:
+		SFSync _sync;
+
+
 		bool _looping;
 		long long _errorCode;
 		SFDecoder _decoder;
