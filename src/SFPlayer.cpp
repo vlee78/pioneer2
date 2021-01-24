@@ -1,6 +1,8 @@
+#pragma warning (disable:4819)
+
 #include "SFPlayer.h"
-#include "SFDecoder.h"
 #include "SFSync.h"
+#include "SFUtils.h"
 #include <stdio.h>
 #include <new>
 #include <string>
@@ -8,6 +10,7 @@
 #include <list>
 #include <chrono>
 #include "SDL.h"
+
 extern "C"
 {
 	#include "libavformat/avformat.h"
@@ -18,51 +21,155 @@ extern "C"
 	#include "libavutil/opt.h"
 }
 
-#define DEMUX_SATURATE 5//A和V的packet队列尾同时大于time+DEMUX_SATURATE的话，暂停demux
-#define AUDIO_SATURATE 5//A的frame队列尾大于time+AUDIO_SATURATE的话，暂停audio解码
-#define VIDEO_SATURATE 5//V的frame队列尾大于time+VIDEO_SATURATE的话，暂停video解码
-#define RENDER_BUFFERED 4//A和V的frame队列尾大于time+RENDER_BUFFERED的话，从buffering开始playing
-
 namespace pioneer
 {
 	class SFPlayer::SFPlayerImpl
 	{
 	public:
-		SFDecoder _decoder;
+		AVFormatContext* _demuxFormatCtx;
+		AVStream* _audioStream;
+		AVStream* _videoStream;
+		AVCodecContext* _audioCodecCtx;
+		AVCodecContext* _videoCodecCtx;
+		AVRational* _audioTimebase;
+		AVRational* _videoTimebase;
+		AVRational _commonTimebase;
 		SFSync _sync;
-
-		struct Desc
-		{
-			SFPlayerImpl* _impl;
-			AVStream* _audioStream;
-			AVStream* _videoStream;
-			AVFrame* _audioFrame;
-			AVFrame* _videoFrame;
-			SDL_Window* _renderWindow;
-			SDL_Renderer* _renderRenderer;
-			SDL_Texture* _renderTexture;
-			SDL_Thread* _renderThread;
-
-			AVRational _commonTimebase;
-			AVRational _audioTimebase;
-			AVRational _videoTimebase;
-			long long _startTick;
-		};
+		SDL_Window* _renderWindow;
+		SDL_Renderer* _renderRenderer;
+		SDL_Texture* _renderTexture;
+		long long _timestamp;
 
 		static void AudioDevice(void* userdata, Uint8* stream, int len)
 		{
-
+			SFPlayerImpl* impl = (SFPlayerImpl*)userdata;
 		}
 
 		static void RenderThread(SFSync* sync, SFThread* thread, void* param)
 		{
+			SFPlayerImpl* impl = (SFPlayerImpl*)param;
 			while (sync->Loop(thread))
 			{
 			}
 		}
 
+		static void DecodeThread(SFSync* sync, SFThread* thread, void* param)
+		{
+			SFPlayerImpl* impl = (SFPlayerImpl*)param;
+			AVPacket* packet = NULL;
+			AVFrame* audioFrame = NULL;
+			AVFrame* videoFrame = NULL;
+			while (sync->Loop(thread))
+			{
+				
+				
+				long long thresholdTimestamp = impl->_timestamp + SFUtils::SecondsToTimestamp(5.0, &impl->_commonTimebase);
+				long long audioTailTimestamp = (impl->_audioStream == NULL ? LLONG_MAX : (impl->_audioFrames.size() == 0 ? -1 : SFUtils::TimestampToTimestamp(impl->_audioFrames.back()->pts, &impl->_audioTimebase, &impl->_commonTimebase)));
+				long long videoTailTimestamp = (impl->_videoStream == NULL ? LLONG_MAX : (impl->_videoFrames.size() == 0 ? -1 : SFUtils::TimestampToTimestamp(impl->_videoFrames.back()->pts, &impl->_videoTimebase, &impl->_commonTimebase)));
+				if (audioTailTimestamp >= thresholdTimestamp && videoTailTimestamp >= thresholdTimestamp)
+				{
+					if (impl->_state == Buffering)
+						impl->_state = Ready;
+					__mutex.Leave();
+					SDL_Delay(5);
+					continue;
+				}
+				__mutex.Leave();
+				if (packet == NULL && (packet = av_packet_alloc()) == NULL && error(impl, -1))
+					break;
+				int ret = av_read_frame(impl->_demuxFormatCtx, packet);
+				if (ret == AVERROR_EOF)
+				{
+					__mutex.Enter();
+					impl->_state = Eof;
+					__mutex.Leave();
+					continue;
+				}
+				else if (ret != 0 && error(impl, -2))
+					break;
+				if (impl->_audioStream && packet->stream_index == impl->_audioStream->index)
+				{
+					if (avcodec_send_packet(impl->_audioCodecCtx, packet) != 0 && error(impl, -1))
+						break;
+					while (impl->_looping)
+					{
+						if (audioFrame == NULL && (audioFrame = av_frame_alloc()) == NULL && error(impl, -1))
+							break;
+						ret = avcodec_receive_frame(impl->_audioCodecCtx, audioFrame);
+						if (ret == AVERROR(EAGAIN) || ret == AVERROR_EOF)
+							break;
+						else if (ret < 0 && error(impl, -1))
+							break;
+						long long timestamp = SFUtils::TimestampToTimestamp(audioFrame->pts, &impl->_audioTimebase, &impl->_commonTimebase);
+						if (timestamp >= impl->_timestamp)
+						{
+							__mutex.Enter();
+							impl->_audioFrames.push_back(audioFrame);
+							__mutex.Leave();
+							audioFrame = NULL;
+						}
+						else
+						{
+							av_frame_unref(audioFrame);
+							av_frame_free(&audioFrame);
+							audioFrame = NULL;
+						}
+					}
+					SDL_Delay(1);
+				}
+				else if (impl->_videoStream && packet->stream_index == impl->_videoStream->index)
+				{
+					if (avcodec_send_packet(impl->_videoCodecCtx, packet) != 0 && error(impl, -1))
+						break;
+					while (impl->_looping)
+					{
+						if (videoFrame == NULL && (videoFrame = av_frame_alloc()) == NULL && error(impl, -1))
+							break;
+						int ret = avcodec_receive_frame(impl->_videoCodecCtx, videoFrame);
+						if (ret == AVERROR(EAGAIN) || ret == AVERROR_EOF)
+							break;
+						if (ret < 0 && error(impl, -1))
+							break;
+						long long timestamp = SFUtils::TimestampToTimestamp(videoFrame->pts, &impl->_videoTimebase, &impl->_commonTimebase);
+						if (timestamp >= impl->_timestamp)
+						{
+							__mutex.Enter();
+							impl->_videoFrames.push_back(videoFrame);
+							__mutex.Leave();
+							videoFrame = NULL;
+						}
+						else
+						{
+							av_frame_unref(videoFrame);
+							av_frame_free(&videoFrame);
+							videoFrame = NULL;
+						}
+					}
+					SDL_Delay(1);
+				}
+				av_packet_unref(packet);
+				av_packet_free(&packet);
+				packet = NULL;
+			}
+			if (audioFrame != NULL)
+			{
+				av_frame_unref(audioFrame);
+				av_frame_free(&audioFrame);
+				audioFrame = NULL;
+			}
+			if (videoFrame != NULL)
+			{
+				av_frame_unref(videoFrame);
+				av_frame_free(&videoFrame);
+				videoFrame = NULL;
+			}
+			return 0;
+
+		}
+
 		static void PollThread(SFSync* sync, SFThread* thread, void* param)
 		{
+			SFPlayerImpl* impl = (SFPlayerImpl*)param;
 			SFMsg msg;
 			while (sync->Poll(thread, msg))
 			{
@@ -72,59 +179,45 @@ namespace pioneer
 		static void MainThread(SFSync* sync, SFThread* thread, void* param)
 		{
 			SFPlayerImpl* impl = (SFPlayerImpl*)param;
-			Desc desc;
-			desc._impl = impl;
-			desc._audioStream = NULL;
-			desc._videoStream = NULL;
-			desc._audioFrame = NULL;
-			desc._videoFrame = NULL;
-			desc._renderWindow = NULL;
-			desc._renderRenderer = NULL;
-			desc._renderTexture = NULL;
-			desc._renderThread = NULL;
-			desc._commonTimebase = impl->_decoder.GetCommonTimebase();
-			desc._audioTimebase = impl->_decoder.GetAudioTimebase();
-			desc._videoTimebase = impl->_decoder.GetVideoTimebase();
-			desc._startTick = 0;
 			if (SDL_Init(SDL_INIT_AUDIO | SDL_INIT_VIDEO | SDL_INIT_TIMER) != 0 && sync->Error(-1, ""))
 				goto end;
-			desc._audioStream = impl->_decoder.GetAudioStream();
-			desc._videoStream = impl->_decoder.GetVideoStream();
-			if (desc._audioStream)
+			if (impl->_audioStream)
 			{
 				SDL_AudioSpec want;
 				SDL_zero(want);
-				want.freq = desc._audioStream->codecpar->sample_rate;
+				want.freq = impl->_audioStream->codecpar->sample_rate;
 				want.format = AUDIO_S16SYS;
 				want.channels = 2;
-				want.samples = impl->_decoder.GetAudioFrameSize();
+				want.samples = 1024;// impl->_decoder.GetAudioFrameSize();
 				want.callback = SFPlayerImpl::AudioDevice;
-				want.userdata = &desc;
+				want.userdata = impl;
 				want.padding = 52428;
 				SDL_AudioSpec real;
 				SDL_zero(real);
 				SDL_AudioDeviceID audioDeviceId = SDL_OpenAudioDevice(NULL, 0, &want, &real, 0);
 				if (audioDeviceId == 0 && sync->Error(-2, ""))
 					goto end;
-				//SDL_PauseAudioDevice(audioDeviceId, 0);
+				SDL_PauseAudioDevice(audioDeviceId, 0);
 			}
-			if (desc._videoStream)
+			if (impl->_videoStream)
 			{
-				int width = desc._videoStream->codecpar[desc._videoStream->index].width;
-				int height = desc._videoStream->codecpar[desc._videoStream->index].height;
-				desc._renderWindow = SDL_CreateWindow("RenderWindow", 100, 100, width, height, SDL_WINDOW_SHOWN);
-				if (desc._renderWindow == NULL && sync->Error(-3, ""))
+				int width = impl->_videoStream->codecpar[impl->_videoStream->index].width;
+				int height = impl->_videoStream->codecpar[impl->_videoStream->index].height;
+				impl->_renderWindow = SDL_CreateWindow("RenderWindow", 100, 100, width, height, SDL_WINDOW_SHOWN);
+				if (impl->_renderWindow == NULL && sync->Error(-3, ""))
 					goto end;
-				desc._renderRenderer = SDL_CreateRenderer(desc._renderWindow, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
-				if (desc._renderRenderer == NULL && sync->Error(-4, ""))
+				impl->_renderRenderer = SDL_CreateRenderer(impl->_renderWindow, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
+				if (impl->_renderRenderer == NULL && sync->Error(-4, ""))
 					goto end;
-				desc._renderTexture = SDL_CreateTexture(desc._renderRenderer, SDL_PIXELFORMAT_IYUV, SDL_TEXTUREACCESS_STREAMING, width, height);
-				if (desc._renderTexture == NULL && sync->Error(-5, ""))
-					goto end;
-				if (sync->Spawn("RenderThread", SFPlayerImpl::RenderThread, &desc) == false && sync->Error(-6, ""))
+				impl->_renderTexture = SDL_CreateTexture(impl->_renderRenderer, SDL_PIXELFORMAT_IYUV, SDL_TEXTUREACCESS_STREAMING, width, height);
+				if (impl->_renderTexture == NULL && sync->Error(-5, ""))
 					goto end;
 			}
-			if (sync->Spawn("PollThread", SFPlayerImpl::PollThread, &desc) == false && sync->Error(-7, ""))
+			if (impl->_videoStream && sync->Spawn("RenderThread", SFPlayerImpl::RenderThread, impl) == false && sync->Error(-6, ""))
+				goto end;
+			if (sync->Spawn("DecodeThread", SFPlayerImpl::DecodeThread, impl) == false && sync->Error(-7, ""))
+				goto end;
+			if (sync->Spawn("PollThread", SFPlayerImpl::PollThread, impl) == false && sync->Error(-8, ""))
 				goto end;
 			if (sync->Loop(thread))
 			{
@@ -140,27 +233,12 @@ namespace pioneer
 				}
 			}
 		end:
-			if (desc._renderThread != NULL) SDL_WaitThread(desc._renderThread, NULL);
-			if (desc._renderTexture != NULL) SDL_DestroyTexture(desc._renderTexture);
-			if (desc._renderRenderer != NULL) SDL_RenderClear(desc._renderRenderer);
-			if (desc._renderWindow != NULL) SDL_DestroyWindow(desc._renderWindow);
+			if (impl->_renderTexture != NULL) SDL_DestroyTexture(impl->_renderTexture);
+			if (impl->_renderRenderer != NULL) SDL_RenderClear(impl->_renderRenderer);
+			if (impl->_renderWindow != NULL) SDL_DestroyWindow(impl->_renderWindow);
+			impl->_renderWindow = NULL;
+			impl->_renderRenderer = NULL;
 			SDL_Quit();
-			desc._renderThread = NULL;
-			desc._renderWindow = NULL;
-			desc._renderRenderer = NULL;
-			desc._renderTexture = NULL;
-			desc._audioStream = NULL;
-			desc._videoStream = NULL;
-			if (desc._audioFrame != NULL)
-			{
-				av_frame_unref(desc._audioFrame);
-				av_frame_free(&desc._audioFrame);
-			}
-			if (desc._videoFrame != NULL)
-			{
-				av_frame_unref(desc._videoFrame);
-				av_frame_free(&desc._videoFrame);
-			}
 		}
 	};
 
@@ -180,12 +258,63 @@ namespace pioneer
 		_impl = new(std::nothrow) SFPlayerImpl();
 		if (_impl == NULL)
 			return -1;
-		if (_impl->_sync.Init() != 0 && Uninit())
+		_impl->_demuxFormatCtx = NULL;
+		_impl->_audioStream = NULL;
+		_impl->_videoStream = NULL;
+		_impl->_audioCodecCtx = NULL;
+		_impl->_videoCodecCtx = NULL;
+		_impl->_audioTimebase = NULL;
+		_impl->_videoTimebase = NULL;
+		_impl->_commonTimebase = { 0, 0 };
+		_impl->_renderWindow = NULL;
+		_impl->_renderRenderer = NULL;
+		_impl->_renderTexture = NULL;
+		_impl->_timestamp = 0;
+
+		if (avformat_open_input(&_impl->_demuxFormatCtx, filename, NULL, NULL) != 0 && Uninit())
 			return -2;
-		if (_impl->_decoder.Init(filename, (SFDecoder::Flag)flag, &_impl->_sync) != 0 && Uninit())
+		if (avformat_find_stream_info(_impl->_demuxFormatCtx, NULL) < 0 && Uninit())
 			return -3;
-		if (_impl->_sync.Spawn("MainThread", SFPlayerImpl::MainThread, _impl) != 0 && Uninit())
+		for (int i = 0; i < (int)_impl->_demuxFormatCtx->nb_streams; i++)
+		{
+			if (flag != NoAudio && _impl->_audioStream == NULL && _impl->_demuxFormatCtx->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_AUDIO)
+				_impl->_audioStream = _impl->_demuxFormatCtx->streams[i];
+			if (flag != NoVideo && _impl->_videoStream == NULL && _impl->_demuxFormatCtx->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_VIDEO)
+				_impl->_videoStream = _impl->_demuxFormatCtx->streams[i];
+		}
+		if (((_impl->_audioStream == NULL && _impl->_videoStream == NULL) || (_impl->_audioStream == NULL && flag == NoVideo) || (_impl->_videoStream == NULL && flag == NoAudio)) && Uninit())
 			return -4;
+		if (_impl->_audioStream != NULL)
+		{
+			_impl->_audioTimebase = &_impl->_audioStream->time_base;
+			AVCodec* audioCodec = avcodec_find_decoder(_impl->_audioStream->codecpar->codec_id);
+			if (audioCodec == NULL && Uninit())
+				return -5;
+			if ((_impl->_audioCodecCtx = avcodec_alloc_context3(audioCodec)) == NULL && Uninit())
+				return -6;
+			if (avcodec_parameters_to_context(_impl->_audioCodecCtx, _impl->_audioStream->codecpar) != 0 && Uninit())
+				return -7;
+			if (avcodec_open2(_impl->_audioCodecCtx, audioCodec, NULL) != 0 && Uninit())
+				return -8;
+		}
+		if (_impl->_videoStream != NULL)
+		{
+			_impl->_videoTimebase = &_impl->_videoStream->time_base;
+			AVCodec* videoCodec = avcodec_find_decoder(_impl->_videoStream->codecpar->codec_id);
+			if (videoCodec == NULL && Uninit())
+				return -9;
+			if ((_impl->_videoCodecCtx = avcodec_alloc_context3(videoCodec)) == NULL && Uninit())
+				return -10;
+			if (avcodec_parameters_to_context(_impl->_videoCodecCtx, _impl->_videoStream->codecpar) != 0 && Uninit())
+				return -11;
+			if (avcodec_open2(_impl->_videoCodecCtx, videoCodec, NULL) != 0 && Uninit())
+				return -12;
+		}
+		_impl->_commonTimebase = SFUtils::CommonTimebase(_impl->_audioTimebase, _impl->_videoTimebase);
+		if (_impl->_sync.Init() != 0 && Uninit())
+			return -13;
+		if (_impl->_sync.Spawn("MainThread", SFPlayerImpl::MainThread, _impl) != 0 && Uninit())
+			return -14;
 		return 0;
 	}
 
@@ -194,7 +323,20 @@ namespace pioneer
 		if (_impl != NULL)
 		{
 			_impl->_sync.Uninit();
-			_impl->_decoder.Uninit();
+			if (_impl->_audioCodecCtx != NULL) avcodec_close(_impl->_audioCodecCtx);
+			if (_impl->_videoCodecCtx != NULL) avcodec_close(_impl->_videoCodecCtx);
+			if (_impl->_demuxFormatCtx != NULL) avformat_close_input(&_impl->_demuxFormatCtx);
+			_impl->_renderTexture = NULL;
+			_impl->_renderRenderer = NULL;
+			_impl->_renderWindow = NULL;
+			_impl->_commonTimebase = { 0,0 };
+			_impl->_audioTimebase = NULL;
+			_impl->_videoTimebase = NULL;
+			_impl->_audioStream = NULL;
+			_impl->_videoStream = NULL;
+			_impl->_audioCodecCtx = NULL;
+			_impl->_videoCodecCtx = NULL;
+			_impl->_demuxFormatCtx = NULL;
 			delete _impl;
 			_impl = NULL;
 		}

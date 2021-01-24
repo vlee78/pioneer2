@@ -119,8 +119,26 @@ namespace pioneer
 			else if (_impl->_state == kStateTerm)
 			{
 				thread->_state = kStateTerm;
-				__mutex.Leave();
-				return false;
+				bool flag = true;
+				for (int i = 0; i < (int)_impl->_threads.size(); i++)
+				{
+					if (_impl->_threads[i]._state != kStateTerm)
+					{
+						flag = false;
+						break;
+					}
+				}
+				if (flag == false)
+				{
+					__mutex.Leave();
+					SDL_Delay(1);
+					continue;
+				}
+				else
+				{
+					__mutex.Leave();
+					return false;
+				}
 			}
 			else
 			{
@@ -185,8 +203,26 @@ namespace pioneer
 			else if (_impl->_state == kStateTerm)
 			{
 				thread->_state = kStateTerm;
-				__mutex.Leave();
-				return false;
+				bool flag = true;
+				for (int i = 0; i < (int)_impl->_threads.size(); i++)
+				{
+					if (_impl->_threads[i]._state != kStateTerm)
+					{
+						flag = false;
+						break;
+					}
+				}
+				if (flag == false)
+				{
+					__mutex.Leave();
+					SDL_Delay(1);
+					continue;
+				}
+				else
+				{
+					__mutex.Leave();
+					return false;
+				}
 			}
 			else
 			{
