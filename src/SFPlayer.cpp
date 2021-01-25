@@ -3,6 +3,7 @@
 #include "SFPlayer.h"
 #include "SFSync.h"
 #include "SFUtils.h"
+#include "SFMutex.h"
 #include <stdio.h>
 #include <new>
 #include <string>
@@ -39,6 +40,10 @@ namespace pioneer
 		SDL_Renderer* _renderRenderer;
 		SDL_Texture* _renderTexture;
 		long long _timestamp;
+		std::list<AVFrame*> _audioFrames;
+		std::list<AVFrame*> _videoFrames;
+		State _state;
+		SFMutex _mutex;
 
 		static void AudioDevice(void* userdata, Uint8* stream, int len)
 		{
@@ -61,51 +66,51 @@ namespace pioneer
 			AVFrame* videoFrame = NULL;
 			while (sync->Loop(thread))
 			{
-				
-				
+				impl->_mutex.Enter();
 				long long thresholdTimestamp = impl->_timestamp + SFUtils::SecondsToTimestamp(5.0, &impl->_commonTimebase);
-				long long audioTailTimestamp = (impl->_audioStream == NULL ? LLONG_MAX : (impl->_audioFrames.size() == 0 ? -1 : SFUtils::TimestampToTimestamp(impl->_audioFrames.back()->pts, &impl->_audioTimebase, &impl->_commonTimebase)));
-				long long videoTailTimestamp = (impl->_videoStream == NULL ? LLONG_MAX : (impl->_videoFrames.size() == 0 ? -1 : SFUtils::TimestampToTimestamp(impl->_videoFrames.back()->pts, &impl->_videoTimebase, &impl->_commonTimebase)));
+				long long audioTailTimestamp = (impl->_audioStream == NULL ? LLONG_MAX : (impl->_audioFrames.size() == 0 ? -1 : SFUtils::TimestampToTimestamp(impl->_audioFrames.back()->pts, impl->_audioTimebase, &impl->_commonTimebase)));
+				long long videoTailTimestamp = (impl->_videoStream == NULL ? LLONG_MAX : (impl->_videoFrames.size() == 0 ? -1 : SFUtils::TimestampToTimestamp(impl->_videoFrames.back()->pts, impl->_videoTimebase, &impl->_commonTimebase)));
 				if (audioTailTimestamp >= thresholdTimestamp && videoTailTimestamp >= thresholdTimestamp)
 				{
 					if (impl->_state == Buffering)
-						impl->_state = Ready;
-					__mutex.Leave();
+						impl->_state = Playing;
+					impl->_mutex.Leave();
 					SDL_Delay(5);
 					continue;
 				}
-				__mutex.Leave();
-				if (packet == NULL && (packet = av_packet_alloc()) == NULL && error(impl, -1))
-					break;
+				impl->_mutex.Leave();
+				if (packet == NULL && (packet = av_packet_alloc()) == NULL && sync->Error(-11, ""))
+					continue;
 				int ret = av_read_frame(impl->_demuxFormatCtx, packet);
 				if (ret == AVERROR_EOF)
 				{
-					__mutex.Enter();
+					impl->_mutex.Enter();
 					impl->_state = Eof;
-					__mutex.Leave();
+					impl->_mutex.Leave();
+					SDL_Delay(5);
 					continue;
 				}
-				else if (ret != 0 && error(impl, -2))
-					break;
+				else if (ret != 0 && sync->Error(-12, ""))
+					continue;
 				if (impl->_audioStream && packet->stream_index == impl->_audioStream->index)
 				{
-					if (avcodec_send_packet(impl->_audioCodecCtx, packet) != 0 && error(impl, -1))
-						break;
-					while (impl->_looping)
+					if (avcodec_send_packet(impl->_audioCodecCtx, packet) != 0 && sync->Error(-13, ""))
+						continue;
+					while (true)
 					{
-						if (audioFrame == NULL && (audioFrame = av_frame_alloc()) == NULL && error(impl, -1))
+						if (audioFrame == NULL && (audioFrame = av_frame_alloc()) == NULL && sync->Error(-14, ""))
 							break;
 						ret = avcodec_receive_frame(impl->_audioCodecCtx, audioFrame);
 						if (ret == AVERROR(EAGAIN) || ret == AVERROR_EOF)
 							break;
-						else if (ret < 0 && error(impl, -1))
+						else if (ret < 0 && sync->Error(-15, ""))
 							break;
-						long long timestamp = SFUtils::TimestampToTimestamp(audioFrame->pts, &impl->_audioTimebase, &impl->_commonTimebase);
+						long long timestamp = SFUtils::TimestampToTimestamp(audioFrame->pts, impl->_audioTimebase, &impl->_commonTimebase);
 						if (timestamp >= impl->_timestamp)
 						{
-							__mutex.Enter();
+							impl->_mutex.Enter();
 							impl->_audioFrames.push_back(audioFrame);
-							__mutex.Leave();
+							impl->_mutex.Leave();
 							audioFrame = NULL;
 						}
 						else
@@ -119,23 +124,23 @@ namespace pioneer
 				}
 				else if (impl->_videoStream && packet->stream_index == impl->_videoStream->index)
 				{
-					if (avcodec_send_packet(impl->_videoCodecCtx, packet) != 0 && error(impl, -1))
-						break;
-					while (impl->_looping)
+					if (avcodec_send_packet(impl->_videoCodecCtx, packet) != 0 && sync->Error(-16, ""))
+						continue;
+					while (true)
 					{
-						if (videoFrame == NULL && (videoFrame = av_frame_alloc()) == NULL && error(impl, -1))
+						if (videoFrame == NULL && (videoFrame = av_frame_alloc()) == NULL && sync->Error(-17, ""))
 							break;
 						int ret = avcodec_receive_frame(impl->_videoCodecCtx, videoFrame);
 						if (ret == AVERROR(EAGAIN) || ret == AVERROR_EOF)
 							break;
-						if (ret < 0 && error(impl, -1))
+						if (ret < 0 && sync->Error(-18, ""))
 							break;
-						long long timestamp = SFUtils::TimestampToTimestamp(videoFrame->pts, &impl->_videoTimebase, &impl->_commonTimebase);
+						long long timestamp = SFUtils::TimestampToTimestamp(videoFrame->pts, impl->_videoTimebase, &impl->_commonTimebase);
 						if (timestamp >= impl->_timestamp)
 						{
-							__mutex.Enter();
+							impl->_mutex.Enter();
 							impl->_videoFrames.push_back(videoFrame);
-							__mutex.Leave();
+							impl->_mutex.Leave();
 							videoFrame = NULL;
 						}
 						else
@@ -163,8 +168,6 @@ namespace pioneer
 				av_frame_free(&videoFrame);
 				videoFrame = NULL;
 			}
-			return 0;
-
 		}
 
 		static void PollThread(SFSync* sync, SFThread* thread, void* param)

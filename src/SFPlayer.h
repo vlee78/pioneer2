@@ -11,6 +11,7 @@ namespace pioneer
 			Paused		= 1,
 			Buffering	= 2,
 			Playing		= 3,
+			Eof			= 4,
 		};
         
 		enum Flag
