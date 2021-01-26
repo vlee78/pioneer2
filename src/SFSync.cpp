@@ -33,7 +33,7 @@ namespace pioneer
 	class SFSync::SFSyncImpl
 	{
 	public:
-		std::vector<SFThread> _threads;
+		std::vector<SFThread*> _threads;
 		std::list<SFMsg> _msgs;
 		SFState _state;
 	};
@@ -69,12 +69,15 @@ namespace pioneer
 		if (_impl != NULL)
 		{
 			_impl->_state = kStateTerm;
-			for (int i = 0; i < (int)_impl->_threads.size(); i++)
+			for (int i = (int)_impl->_threads.size() - 1; i >= 0; i--)
 			{
-				SDL_Thread* thread = _impl->_threads[i]._thread;
+				SFThread*& thread = _impl->_threads[i];
+				SDL_Thread* th = thread->_thread;
 				__mutex.Leave();
-				SDL_WaitThread(thread, NULL);
+				SDL_WaitThread(th, NULL);
 				__mutex.Enter();
+				delete thread;
+				thread = NULL;
 			}
 			_impl->_threads.clear();
 			_impl->_msgs.clear();
@@ -122,7 +125,7 @@ namespace pioneer
 				bool flag = true;
 				for (int i = 0; i < (int)_impl->_threads.size(); i++)
 				{
-					if (_impl->_threads[i]._state != kStateTerm)
+					if (_impl->_threads[i]->_state != kStateTerm)
 					{
 						flag = false;
 						break;
@@ -164,7 +167,7 @@ namespace pioneer
 				bool flag = true;
 				for (int i = 0; i < (int)_impl->_threads.size(); i++)
 				{
-					if (_impl->_threads[i]._state != kStatePoll)
+					if (_impl->_threads[i]->_state != kStatePoll)
 					{
 						flag = false;
 						break;
@@ -206,7 +209,7 @@ namespace pioneer
 				bool flag = true;
 				for (int i = 0; i < (int)_impl->_threads.size(); i++)
 				{
-					if (_impl->_threads[i]._state != kStateTerm)
+					if (_impl->_threads[i]->_state != kStateTerm)
 					{
 						flag = false;
 						break;
@@ -234,7 +237,9 @@ namespace pioneer
 
 	static int SDLThreadFunc(void* param)
 	{
+		__mutex.Enter();
 		SFThread* thread = (SFThread*)param;
+		__mutex.Leave();
 		thread->_func(thread->_sync, thread, thread->_param);
 		return 0;
 	}
@@ -244,14 +249,12 @@ namespace pioneer
 		SFMutexScoped lock(&__mutex);
 		if (_impl == NULL || name == NULL || func == NULL)
 			return false;
-		SFThread thread;
-		thread._sync = this;
-		thread._thread = SDL_CreateThread(SDLThreadFunc, name, &thread);
-		if (thread._thread == NULL)
-			return false;
-		thread._name = name;
-		thread._func = func;
-		thread._param = param;
+		SFThread* thread = new(std::nothrow) SFThread();
+		thread->_sync = this;
+		thread->_thread = SDL_CreateThread(SDLThreadFunc, name, thread);
+		thread->_name = name;
+		thread->_func = func;
+		thread->_param = param;
 		_impl->_threads.push_back(thread);
 		return true;
 	}

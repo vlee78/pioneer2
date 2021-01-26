@@ -44,10 +44,149 @@ namespace pioneer
 		std::list<AVFrame*> _videoFrames;
 		State _state;
 		SFMutex _mutex;
+		AVFrame* _audioFrame;
+		AVFrame* _videoFrame;
 
 		static void AudioDevice(void* userdata, Uint8* stream, int len)
 		{
 			SFPlayerImpl* impl = (SFPlayerImpl*)userdata;
+			memset(stream, 0, len);
+			int sampleRate = impl->_audioStream->codecpar->sample_rate;
+			short* buffer0 = ((short*)stream) + 0;
+			short* buffer1 = ((short*)stream) + 1;
+			int bufchs = 2;
+			int bufoff = 0;
+			int bufmax = len / sizeof(short);
+
+			AVFrame*& frame = impl->_audioFrame;
+			int nb_samples = 0;
+			while (impl->_sync.Test())
+			{
+				if (frame == NULL)
+				{
+					impl->_mutex.Enter();
+					if (impl->_state == Playing && impl->_audioFrames.size() > 0)
+					{
+						frame = impl->_audioFrames.front();
+						impl->_audioFrames.pop_front();
+					}
+					impl->_mutex.Leave();
+				}
+				if (frame == NULL)
+					break;
+				AVSampleFormat format = (AVSampleFormat)frame->format;
+				int channels = frame->channels;
+				nb_samples = frame->nb_samples;
+				if (sampleRate != frame->sample_rate && impl->_sync.Error(-21, ""))
+					break;
+				int framemax = frame->nb_samples;
+				int frameoff = frame->width;
+				if (format == AV_SAMPLE_FMT_FLTP)
+				{
+					if (channels == 1)
+					{
+						float* buf = (float*)frame->data[0];
+						for (; frameoff < framemax && bufoff < bufmax; frameoff++, bufoff += bufchs)
+						{
+							float val = buf[frameoff];
+							int check = (int)(val * 32768.0f);
+							check = (check < -32768 ? -32768 : (check > 32767 ? 32767 : check));
+							buffer0[bufoff] = (short)check;
+							buffer1[bufoff] = (short)check;
+						}
+					}
+					else if (channels == 2)
+					{
+						float* buf0 = (float*)frame->data[0];
+						float* buf1 = (float*)frame->data[1];
+						for (; frameoff < framemax && bufoff < bufmax; frameoff++, bufoff += bufchs)
+						{
+							float val0 = buf0[frameoff];
+							float val1 = buf1[frameoff];
+							int check0 = (int)(val0 * 32768.0f);
+							int check1 = (int)(val1 * 32768.0f);
+							check0 = (check0 < -32768 ? -32768 : (check0 > 32767 ? 32767 : check0));
+							check1 = (check1 < -32768 ? -32768 : (check1 > 32767 ? 32767 : check1));
+							buffer0[bufoff] = (short)check0;
+							buffer1[bufoff] = (short)check1;
+						}
+					}
+					else if (channels == 6)
+					{
+						float* buf0 = (float*)frame->data[0];
+						float* buf1 = (float*)frame->data[1];
+						float* buf2 = (float*)frame->data[2];
+						float* buf3 = (float*)frame->data[3];
+						float* buf4 = (float*)frame->data[4];
+						float* buf5 = (float*)frame->data[5];
+						for (; frameoff < framemax && bufoff < bufmax; frameoff++, bufoff += bufchs)
+						{
+							float val0 = buf0[frameoff] + buf2[frameoff] + buf3[frameoff] + buf4[frameoff];
+							float val1 = buf1[frameoff] + buf2[frameoff] + buf3[frameoff] + buf5[frameoff];
+							int check0 = (int)(val0 * 32768.0f);
+							int check1 = (int)(val1 * 32768.0f);
+							check0 = (check0 < -32768 ? -32768 : (check0 > 32767 ? 32767 : check0));
+							check1 = (check1 < -32768 ? -32768 : (check1 > 32767 ? 32767 : check1));
+							buffer0[bufoff] = (short)check0;
+							buffer1[bufoff] = (short)check1;
+						}
+					}
+					else
+					{
+						impl->_sync.Error(-23, "");
+						break;
+					}
+				}
+				else if (format == AV_SAMPLE_FMT_S16P)
+				{
+					if (channels == 1)
+					{
+						short* buf0 = (short*)frame->data[0];
+						for (; frameoff < framemax && bufoff < bufmax; frameoff++, bufoff += bufchs)
+						{
+							buffer0[bufoff] = buf0[frameoff];
+							buffer1[bufoff] = buf0[frameoff];
+						}
+					}
+					if (channels == 2)
+					{
+						short* buf0 = (short*)frame->data[0];
+						short* buf1 = (short*)frame->data[1];
+						for (; frameoff < framemax && bufoff < bufmax; frameoff++, bufoff += bufchs)
+						{
+							buffer0[bufoff] = buf0[frameoff];
+							buffer1[bufoff] = buf1[frameoff];
+						}
+					}
+					else
+					{
+						impl->_sync.Error(-24, "");
+						break;
+					}
+				}
+				else
+				{
+					impl->_sync.Error(-25, "");
+					break;
+				}
+				frame->width = frameoff;
+				if (frameoff >= framemax)
+				{
+					av_frame_unref(frame);
+					av_frame_free(&frame);
+					frame = NULL;
+				}
+				if (bufoff >= bufmax)
+					break;
+			}
+			if (bufoff > 0)
+			{
+				long long samples = bufoff / bufchs;//总共消耗了frame queue多少sample
+				long long shift = SFUtils::SamplesToTimestamp(samples, sampleRate, &impl->_commonTimebase);
+				impl->_mutex.Enter();
+				impl->_timestamp += shift;
+				impl->_mutex.Leave();
+			}
 		}
 
 		static void RenderThread(SFSync* sync, SFThread* thread, void* param)
@@ -222,7 +361,7 @@ namespace pioneer
 				goto end;
 			if (sync->Spawn("PollThread", SFPlayerImpl::PollThread, impl) == false && sync->Error(-8, ""))
 				goto end;
-			if (sync->Loop(thread))
+			while (sync->Loop(thread))
 			{
 				SDL_Event event;
 				if (SDL_PollEvent(&event))
@@ -273,6 +412,11 @@ namespace pioneer
 		_impl->_renderRenderer = NULL;
 		_impl->_renderTexture = NULL;
 		_impl->_timestamp = 0;
+		_impl->_audioFrames.clear();
+		_impl->_videoFrames.clear();
+		_impl->_state = Closed;
+		_impl->_audioFrame = NULL;
+		_impl->_videoFrame = NULL;
 
 		if (avformat_open_input(&_impl->_demuxFormatCtx, filename, NULL, NULL) != 0 && Uninit())
 			return -2;
@@ -313,10 +457,11 @@ namespace pioneer
 			if (avcodec_open2(_impl->_videoCodecCtx, videoCodec, NULL) != 0 && Uninit())
 				return -12;
 		}
+		_impl->_state = Buffering;
 		_impl->_commonTimebase = SFUtils::CommonTimebase(_impl->_audioTimebase, _impl->_videoTimebase);
-		if (_impl->_sync.Init() != 0 && Uninit())
+		if (_impl->_sync.Init() == false && Uninit())
 			return -13;
-		if (_impl->_sync.Spawn("MainThread", SFPlayerImpl::MainThread, _impl) != 0 && Uninit())
+		if (_impl->_sync.Spawn("MainThread", SFPlayerImpl::MainThread, _impl) == false && Uninit())
 			return -14;
 		return 0;
 	}
@@ -326,6 +471,28 @@ namespace pioneer
 		if (_impl != NULL)
 		{
 			_impl->_sync.Uninit();
+			for (auto it = _impl->_audioFrames.begin(); it != _impl->_audioFrames.end(); it = _impl->_audioFrames.erase(it))
+			{
+				av_frame_unref(*it);
+				av_frame_free(&*it);
+			}
+			for (auto it = _impl->_videoFrames.begin(); it != _impl->_videoFrames.end(); it = _impl->_videoFrames.erase(it))
+			{
+				av_frame_unref(*it);
+				av_frame_free(&*it);
+			}
+			if (_impl->_audioFrame != NULL)
+			{
+				av_frame_unref(_impl->_audioFrame);
+				av_frame_free(&_impl->_audioFrame);
+				_impl->_audioFrame = NULL;
+			}
+			if (_impl->_videoFrame != NULL)
+			{
+				av_frame_unref(_impl->_videoFrame);
+				av_frame_free(&_impl->_videoFrame);
+				_impl->_videoFrame = NULL;
+			}
 			if (_impl->_audioCodecCtx != NULL) avcodec_close(_impl->_audioCodecCtx);
 			if (_impl->_videoCodecCtx != NULL) avcodec_close(_impl->_videoCodecCtx);
 			if (_impl->_demuxFormatCtx != NULL) avformat_close_input(&_impl->_demuxFormatCtx);
