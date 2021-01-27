@@ -192,8 +192,49 @@ namespace pioneer
 		static void RenderThread(SFSync* sync, SFThread* thread, void* param)
 		{
 			SFPlayerImpl* impl = (SFPlayerImpl*)param;
+			AVFrame*& frame = impl->_videoFrame;
 			while (sync->Loop(thread))
 			{
+				if (frame == NULL)
+				{
+					impl->_mutex.Enter();
+					if (impl->_state == Playing && impl->_videoFrames.size() > 0)
+					{
+						frame = impl->_videoFrames.front();
+						impl->_videoFrames.pop_front();
+					}
+					impl->_mutex.Leave();
+				}
+				if (frame == NULL)
+				{
+					continue;
+				}
+				long long timestamp = SFUtils::TimestampToTimestamp(frame->best_effort_timestamp, impl->_videoTimebase, &impl->_commonTimebase);
+				long long duration = SFUtils::TimestampToTimestamp(frame->pkt_duration, impl->_videoTimebase, &impl->_commonTimebase);
+				if (timestamp <= impl->_timestamp)
+				{
+					if (SDL_UpdateYUVTexture(impl->_renderTexture, NULL, frame->data[0], frame->linesize[0], frame->data[1],
+						frame->linesize[1], frame->data[2], frame->linesize[2]) != 0 && sync->Error(-41, ""))
+						continue;
+					if (SDL_RenderCopy(impl->_renderRenderer, impl->_renderTexture, NULL, NULL) != 0 && sync->Error(-42, ""))
+						continue;
+					SDL_RenderPresent(impl->_renderRenderer);
+					av_frame_unref(frame);
+					av_frame_free(&frame);
+					frame = NULL;
+				}
+				if (impl->_audioStream == NULL)
+				{
+					//desc->_impl->_decoder.Forward(duration);
+					//long long nanoTs = std::chrono::high_resolution_clock::now().time_since_epoch().count();
+					//long long nanoDiff = nanoTs - desc->_impl->_ts;
+					//double diffSecs = nanoDiff / (double)1000000000l;
+					//if (nanoDiff > 0)
+					//{
+					//	desc->_impl->_time += diffSecs;
+					//	desc->_impl->_ts = nanoTs;
+					//}
+				}
 			}
 		}
 
@@ -315,6 +356,7 @@ namespace pioneer
 			SFMsg msg;
 			while (sync->Poll(thread, msg))
 			{
+				SDL_Delay(100);
 			}
 		}
 
@@ -345,7 +387,7 @@ namespace pioneer
 			{
 				int width = impl->_videoStream->codecpar[impl->_videoStream->index].width;
 				int height = impl->_videoStream->codecpar[impl->_videoStream->index].height;
-				impl->_renderWindow = SDL_CreateWindow("RenderWindow", 100, 100, width, height, SDL_WINDOW_SHOWN);
+				impl->_renderWindow = SDL_CreateWindow("RenderWindow", 100, 100, width/2, height/2, SDL_WINDOW_SHOWN);
 				if (impl->_renderWindow == NULL && sync->Error(-3, ""))
 					goto end;
 				impl->_renderRenderer = SDL_CreateRenderer(impl->_renderWindow, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
