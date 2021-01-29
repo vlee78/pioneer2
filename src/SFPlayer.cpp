@@ -28,6 +28,7 @@ namespace pioneer
 	{
 	public:
 		AVFormatContext* _demuxFormatCtx;
+		int _audioDeviceSamples;
 		AVStream* _audioStream;
 		AVStream* _videoStream;
 		AVCodecContext* _audioCodecCtx;
@@ -46,6 +47,7 @@ namespace pioneer
 		SFMutex _mutex;
 		AVFrame* _audioFrame;
 		AVFrame* _videoFrame;
+		long long _startTs;
 
 		static void AudioDevice(void* userdata, Uint8* stream, int len)
 		{
@@ -248,7 +250,7 @@ namespace pioneer
 			while (sync->Loop(thread))
 			{
 				impl->_mutex.Enter();
-				long long thresholdTimestamp = impl->_timestamp + SFUtils::SecondsToTimestamp(5.0, &impl->_commonTimebase);
+				long long thresholdTimestamp = impl->_timestamp + SFUtils::SecondsToTimestamp(1.0, &impl->_commonTimebase);
 				long long audioTailTimestamp = (impl->_audioStream == NULL ? LLONG_MAX : (impl->_audioFrames.size() == 0 ? -1 : SFUtils::TimestampToTimestamp(impl->_audioFrames.back()->pts, impl->_audioTimebase, &impl->_commonTimebase)));
 				long long videoTailTimestamp = (impl->_videoStream == NULL ? LLONG_MAX : (impl->_videoFrames.size() == 0 ? -1 : SFUtils::TimestampToTimestamp(impl->_videoFrames.back()->pts, impl->_videoTimebase, &impl->_commonTimebase)));
 				if (audioTailTimestamp >= thresholdTimestamp && videoTailTimestamp >= thresholdTimestamp)
@@ -371,7 +373,7 @@ namespace pioneer
 				want.freq = impl->_audioStream->codecpar->sample_rate;
 				want.format = AUDIO_S16SYS;
 				want.channels = 2;
-				want.samples = 1024;// impl->_decoder.GetAudioFrameSize();
+				want.samples = impl->_audioDeviceSamples;
 				want.callback = SFPlayerImpl::AudioDevice;
 				want.userdata = impl;
 				want.padding = 52428;
@@ -435,6 +437,37 @@ namespace pioneer
 		Uninit();
 	}
 
+	static int CalAudioDeviceSamples(AVFormatContext* demuxFormatCtx, AVStream* audioStream)
+	{
+		int frameSize = 1024;
+		if (audioStream != NULL)
+		{
+			frameSize = audioStream->codecpar->frame_size;
+			if (frameSize == 0)
+			{
+				AVPacket packet;
+				while (true)
+				{
+					if (av_read_frame(demuxFormatCtx, &packet) != 0)
+					{
+						av_packet_unref(&packet);
+						break;
+					}
+					if (packet.stream_index != audioStream->index)
+					{
+						av_packet_unref(&packet);
+						continue;
+					}
+					frameSize = (int)SFUtils::TimestampToSamples(packet.duration, audioStream->codecpar->sample_rate, &audioStream->time_base);
+					av_packet_unref(&packet);
+					break;
+				}
+				av_seek_frame(demuxFormatCtx, 0, 0, 0);
+			}
+		}
+		return frameSize;
+	}
+
 	long long SFPlayer::Init(const char* filename, Flag flag)
 	{
 		Uninit();
@@ -442,6 +475,7 @@ namespace pioneer
 		if (_impl == NULL)
 			return -1;
 		_impl->_demuxFormatCtx = NULL;
+		_impl->_audioDeviceSamples = 0;
 		_impl->_audioStream = NULL;
 		_impl->_videoStream = NULL;
 		_impl->_audioCodecCtx = NULL;
@@ -458,7 +492,6 @@ namespace pioneer
 		_impl->_state = Closed;
 		_impl->_audioFrame = NULL;
 		_impl->_videoFrame = NULL;
-
 		if (avformat_open_input(&_impl->_demuxFormatCtx, filename, NULL, NULL) != 0 && Uninit())
 			return -2;
 		if (avformat_find_stream_info(_impl->_demuxFormatCtx, NULL) < 0 && Uninit())
@@ -498,6 +531,8 @@ namespace pioneer
 			if (avcodec_open2(_impl->_videoCodecCtx, videoCodec, NULL) != 0 && Uninit())
 				return -12;
 		}
+		_impl->_audioDeviceSamples = CalAudioDeviceSamples(_impl->_demuxFormatCtx, _impl->_audioStream);
+		printf("audioDeviceSamples = %d\n", _impl->_audioDeviceSamples);
 		_impl->_state = Buffering;
 		_impl->_commonTimebase = SFUtils::CommonTimebase(_impl->_audioTimebase, _impl->_videoTimebase);
 		if (_impl->_sync.Init() == false && Uninit())
