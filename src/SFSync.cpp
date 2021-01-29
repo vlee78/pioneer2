@@ -18,6 +18,7 @@ namespace pioneer
 		kStatePoll = 0,
 		kStateLoop = 1,
 		kStateTerm = 2,
+		kStateClosed = 3,
 	};
 
 	struct SFThread
@@ -106,6 +107,12 @@ namespace pioneer
 				__mutex.Leave();
 				return false;
 			}
+			else if (_impl->_state == kStateLoop)
+			{
+				thread->_state = kStateLoop;
+				__mutex.Leave();
+				return true;
+			}
 			else if (_impl->_state == kStatePoll)
 			{
 				thread->_state = kStatePoll;
@@ -113,14 +120,12 @@ namespace pioneer
 				SDL_Delay(1);
 				continue;
 			}
-			else if (_impl->_state == kStateLoop)
-			{
-				thread->_state = kStateLoop;
-				__mutex.Leave();
-				return true;
-			}
 			else if (_impl->_state == kStateTerm)
 			{
+				thread->_state = kStateTerm;
+				__mutex.Leave();
+				return false;
+				/*
 				thread->_state = kStateTerm;
 				bool flag = true;
 				for (int i = 0; i < (int)_impl->_threads.size(); i++)
@@ -142,6 +147,7 @@ namespace pioneer
 					__mutex.Leave();
 					return false;
 				}
+				*/
 			}
 			else
 			{
@@ -160,6 +166,15 @@ namespace pioneer
 			{
 				__mutex.Leave();
 				return false;
+			}
+			else if (_impl->_state == kStateLoop)
+			{
+				thread->_state = kStateLoop;
+				if (_impl->_msgs.size() > 0)
+					_impl->_state = kStatePoll;
+				__mutex.Leave();
+				SDL_Delay(50);
+				continue;
 			}
 			else if (_impl->_state == kStatePoll)
 			{
@@ -183,7 +198,7 @@ namespace pioneer
 				{
 					_impl->_state = kStateLoop;
 					__mutex.Leave();
-					SDL_Delay(1);
+					SDL_Delay(50);
 					continue;
 				}
 				else
@@ -194,17 +209,13 @@ namespace pioneer
 					return true;
 				}
 			}
-			else if (_impl->_state == kStateLoop)
-			{
-				thread->_state = kStateLoop;
-				if (_impl->_msgs.size() > 0)
-					_impl->_state = kStatePoll;
-				__mutex.Leave();
-				SDL_Delay(1);
-				continue;
-			}
 			else if (_impl->_state == kStateTerm)
 			{
+				thread->_state = kStateTerm;
+				__mutex.Leave();
+				return false;
+
+				/*
 				thread->_state = kStateTerm;
 				bool flag = true;
 				for (int i = 0; i < (int)_impl->_threads.size(); i++)
@@ -218,7 +229,7 @@ namespace pioneer
 				if (flag == false)
 				{
 					__mutex.Leave();
-					SDL_Delay(1);
+					SDL_Delay(50);
 					continue;
 				}
 				else
@@ -226,6 +237,7 @@ namespace pioneer
 					__mutex.Leave();
 					return false;
 				}
+				*/
 			}
 			else
 			{
@@ -241,6 +253,7 @@ namespace pioneer
 		SFThread* thread = (SFThread*)param;
 		__mutex.Leave();
 		thread->_func(thread->_sync, thread, thread->_param);
+		thread->_state = kStateClosed;
 		return 0;
 	}
 
