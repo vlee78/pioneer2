@@ -47,6 +47,7 @@ int main(int argc, char* argv[])
 	player.Init("lyl.mp4", pioneer::SFPlayer::Default);
 	//player.Init("F:\\aerial.american\\Aerial.America.S03E04.Nevada.1080p.AMZN.WEB-DL.DDP2.0.H.264-RCVR.mkv", pioneer::SFPlayer::Default);
 	//player.Init("F:\\aerial.american\\Aerial.America.S05E02.Idaho.1080p.AMZN.WEB-DL.DDP2.0.H.264-RCVR.mkv", pioneer::SFPlayer::Default);
+	player.Seek(20.0);
 
 
 	//pioneer::SFReplayer replayer;

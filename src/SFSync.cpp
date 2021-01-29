@@ -110,6 +110,12 @@ namespace pioneer
 			else if (_impl->_state == kStateLoop)
 			{
 				thread->_state = kStateLoop;
+				if (_impl->_msgs.size() > 0)
+				{
+					_impl->_state = kStatePoll;
+					__mutex.Leave();
+					continue;
+				}
 				__mutex.Leave();
 				return true;
 			}
@@ -125,29 +131,6 @@ namespace pioneer
 				thread->_state = kStateTerm;
 				__mutex.Leave();
 				return false;
-				/*
-				thread->_state = kStateTerm;
-				bool flag = true;
-				for (int i = 0; i < (int)_impl->_threads.size(); i++)
-				{
-					if (_impl->_threads[i]->_state != kStateTerm)
-					{
-						flag = false;
-						break;
-					}
-				}
-				if (flag == false)
-				{
-					__mutex.Leave();
-					SDL_Delay(1);
-					continue;
-				}
-				else
-				{
-					__mutex.Leave();
-					return false;
-				}
-				*/
 			}
 			else
 			{
@@ -214,30 +197,6 @@ namespace pioneer
 				thread->_state = kStateTerm;
 				__mutex.Leave();
 				return false;
-
-				/*
-				thread->_state = kStateTerm;
-				bool flag = true;
-				for (int i = 0; i < (int)_impl->_threads.size(); i++)
-				{
-					if (_impl->_threads[i]->_state != kStateTerm)
-					{
-						flag = false;
-						break;
-					}
-				}
-				if (flag == false)
-				{
-					__mutex.Leave();
-					SDL_Delay(50);
-					continue;
-				}
-				else
-				{
-					__mutex.Leave();
-					return false;
-				}
-				*/
 			}
 			else
 			{

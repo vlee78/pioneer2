@@ -9,7 +9,9 @@ namespace pioneer
 	struct SFMsg
 	{
 		int _id;
-		long long _param;
+		long long _llparam;
+		float _fparam;
+		double _dparam;
 	};
 
 	class SFSync

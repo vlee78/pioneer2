@@ -10,6 +10,7 @@
 #include <vector>
 #include <list>
 #include <chrono>
+#include <algorithm>
 #include "SDL.h"
 
 extern "C"
@@ -24,6 +25,15 @@ extern "C"
 
 namespace pioneer
 {
+	enum MsgId
+	{
+		kMsgPauseResume = 0,
+		kMsgSeek		= 1,
+		kMsgBackward	= 2,
+		kMsgForward		= 3,
+		kMsgRewind		= 4,
+	};
+
 	class SFPlayer::SFPlayerImpl
 	{
 	public:
@@ -47,7 +57,169 @@ namespace pioneer
 		SFMutex _mutex;
 		AVFrame* _audioFrame;
 		AVFrame* _videoFrame;
+		AVFrame* _decodeAudioFrame;
+		AVFrame* _decodeVideoFrame;
 		long long _startTs;
+
+		static long long Seek(SFPlayer::SFPlayerImpl* impl, double seekto)
+		{
+			long long errorCode = 0;
+			if (impl->_videoStream != NULL)
+			{
+				long long timestamp = SFUtils::SecondsToTimestamp(seekto, impl->_videoTimebase);
+				long long video_key_pts = -1;
+				long long video_min_pts = -1;
+				long long lastseek = -1;
+				long long seekts = timestamp;
+				AVPacket* packet = NULL;
+				while (true)
+				{
+					if (seekts >= 0)
+					{
+						video_key_pts = -1;
+						video_min_pts = -1;
+						if (lastseek >= 0 && seekts >= lastseek)
+						{
+							errorCode = -1;
+							break;
+						}
+						if (av_seek_frame(impl->_demuxFormatCtx, impl->_videoStream->index, seekts, AVSEEK_FLAG_BACKWARD) != 0)
+						{
+							errorCode = -2;
+							break;
+						}
+						lastseek = seekts;
+						seekts = -1;
+					}
+					packet = av_packet_alloc();
+					if (packet == NULL)
+					{
+						errorCode = -3;
+						break;
+					}
+					bool hit = false;
+					int ret = av_read_frame(impl->_demuxFormatCtx, packet);
+					if (ret == 0)
+					{
+						if (impl->_audioStream && packet->stream_index == impl->_audioStream->index)
+						{
+						}
+						else if (impl->_videoStream && packet->stream_index == impl->_videoStream->index)
+						{
+							if (video_key_pts >= 0 && packet->flags & AV_PKT_FLAG_KEY)
+								hit = true;
+							if (video_key_pts == -1 && packet->flags & AV_PKT_FLAG_KEY)
+							{
+								video_key_pts = packet->pts;
+								if (video_key_pts <= timestamp)
+									hit = true;
+							}
+							if (video_min_pts == -1 || packet->pts < video_min_pts)
+								video_min_pts = packet->pts;
+						}
+					}
+					else if (ret == AVERROR_EOF)
+					{
+						if (video_key_pts == -1)
+						{
+							errorCode = -4;
+							break;
+						}
+						hit = true;
+					}
+					else
+					{
+						errorCode = -4;
+						break;
+					}
+					av_packet_unref(packet);
+					av_packet_free(&packet);
+					packet = NULL;
+					if (hit)
+					{
+						if (video_key_pts < 0)
+						{
+							errorCode = -5;
+							break;
+						}
+						if (video_key_pts <= timestamp)
+							break;
+						seekts = video_min_pts - 1;
+					}
+				}
+				if (packet != NULL)
+				{
+					av_packet_unref(packet);
+					av_packet_free(&packet);
+					packet = NULL;
+				}
+				if (av_seek_frame(impl->_demuxFormatCtx, impl->_videoStream->index, lastseek, AVSEEK_FLAG_BACKWARD) != 0)
+					errorCode = -6;
+			}
+			else if (impl->_audioStream)
+			{
+			}
+			if (errorCode == 0)
+				impl->_timestamp = SFUtils::SecondsToTimestamp(seekto, &impl->_commonTimebase);
+			return errorCode;
+		}
+
+		void ClearImplement(bool reopen)
+		{
+			for (auto it = this->_audioFrames.begin(); it != this->_audioFrames.end(); it = this->_audioFrames.erase(it))
+			{
+				av_frame_unref(*it);
+				av_frame_free(&*it);
+			}
+			for (auto it = this->_videoFrames.begin(); it != this->_videoFrames.end(); it = this->_videoFrames.erase(it))
+			{
+				av_frame_unref(*it);
+				av_frame_free(&*it);
+			}
+			if (this->_audioFrame != NULL)
+			{
+				av_frame_unref(this->_audioFrame);
+				av_frame_free(&this->_audioFrame);
+				this->_audioFrame = NULL;
+			}
+			if (this->_videoFrame != NULL)
+			{
+				av_frame_unref(this->_videoFrame);
+				av_frame_free(&this->_videoFrame);
+				this->_videoFrame = NULL;
+			}
+			if (this->_decodeAudioFrame != NULL)
+			{
+				av_frame_unref(this->_decodeAudioFrame);
+				av_frame_free(&this->_decodeAudioFrame);
+				this->_decodeAudioFrame = NULL;
+			}
+			if (this->_decodeVideoFrame != NULL)
+			{
+				av_frame_unref(this->_decodeVideoFrame);
+				av_frame_free(&this->_decodeVideoFrame);
+				this->_decodeVideoFrame = NULL;
+			}
+			if (reopen)
+			{
+				if (this->_audioStream != NULL)
+				{
+					if (this->_audioCodecCtx != NULL) avcodec_close(this->_audioCodecCtx);
+					AVCodec* audioCodec = avcodec_find_decoder(this->_audioStream->codecpar->codec_id);
+					this->_audioCodecCtx = avcodec_alloc_context3(audioCodec);
+					avcodec_parameters_to_context(this->_audioCodecCtx, this->_audioStream->codecpar);
+					avcodec_open2(this->_audioCodecCtx, audioCodec, NULL);
+				}
+				if (this->_videoStream != NULL)
+				{
+					if (this->_videoCodecCtx != NULL) avcodec_close(this->_videoCodecCtx);
+					AVCodec* videoCodec = avcodec_find_decoder(this->_videoStream->codecpar->codec_id);
+					this->_videoCodecCtx = avcodec_alloc_context3(videoCodec);
+					avcodec_parameters_to_context(this->_videoCodecCtx, this->_videoStream->codecpar);
+					avcodec_open2(this->_videoCodecCtx, videoCodec, NULL);
+				}
+			}
+		}
 
 		static void AudioDevice(void* userdata, Uint8* stream, int len)
 		{
@@ -245,12 +417,12 @@ namespace pioneer
 		{
 			SFPlayerImpl* impl = (SFPlayerImpl*)param;
 			AVPacket* packet = NULL;
-			AVFrame* audioFrame = NULL;
-			AVFrame* videoFrame = NULL;
+			AVFrame*& audioFrame = impl->_decodeAudioFrame;
+			AVFrame*& videoFrame = impl->_decodeVideoFrame;
 			while (sync->Loop(thread))
 			{
 				impl->_mutex.Enter();
-				long long thresholdTimestamp = impl->_timestamp + SFUtils::SecondsToTimestamp(1.0, &impl->_commonTimebase);
+				long long thresholdTimestamp = impl->_timestamp + SFUtils::SecondsToTimestamp(3.0, &impl->_commonTimebase);
 				long long audioTailTimestamp = (impl->_audioStream == NULL ? LLONG_MAX : (impl->_audioFrames.size() == 0 ? -1 : SFUtils::TimestampToTimestamp(impl->_audioFrames.back()->pts, impl->_audioTimebase, &impl->_commonTimebase)));
 				long long videoTailTimestamp = (impl->_videoStream == NULL ? LLONG_MAX : (impl->_videoFrames.size() == 0 ? -1 : SFUtils::TimestampToTimestamp(impl->_videoFrames.back()->pts, impl->_videoTimebase, &impl->_commonTimebase)));
 				if (audioTailTimestamp >= thresholdTimestamp && videoTailTimestamp >= thresholdTimestamp)
@@ -357,7 +529,45 @@ namespace pioneer
 			SFMsg msg;
 			while (sync->Poll(thread, msg))
 			{
-				SDL_Delay(100);
+				if (msg._id == kMsgPauseResume)
+				{
+
+				}
+				else if (msg._id == kMsgSeek)
+				{
+					impl->ClearImplement(true);
+					if (SFPlayerImpl::Seek(impl, msg._dparam) != 0 && sync->Error(-51, ""))
+						continue;
+				}
+				else if (msg._id == kMsgBackward)
+				{
+					impl->ClearImplement(true);
+					double toSeconds = SFUtils::TimestampToSeconds(impl->_timestamp, &impl->_commonTimebase) - msg._dparam;
+					toSeconds = std::max(toSeconds, 0.0);
+					if (SFPlayerImpl::Seek(impl, toSeconds) != 0 && sync->Error(-52, ""))
+						continue;
+					impl->_state = Buffering;
+				}
+				else if (msg._id == kMsgForward)
+				{
+					impl->ClearImplement(true);
+					double toSeconds = SFUtils::TimestampToSeconds(impl->_timestamp, &impl->_commonTimebase) + msg._dparam;
+					toSeconds = std::max(toSeconds, 0.0);
+					if (SFPlayerImpl::Seek(impl, toSeconds) != 0 && sync->Error(-52, ""))
+						continue;
+					impl->_state = Buffering;
+				}
+				else if (msg._id == kMsgRewind)
+				{
+					impl->ClearImplement(true);
+					if (SFPlayerImpl::Seek(impl, 0.0) != 0 && sync->Error(-52, ""))
+						continue;
+					impl->_state = Buffering;
+				}
+				else
+				{
+					SDL_Delay(100);
+				}
 			}
 		}
 
@@ -411,6 +621,16 @@ namespace pioneer
 				{
 					switch (event.type)
 					{
+					case SDL_KEYDOWN:
+						if (event.key.keysym.sym == SDLK_LEFT)
+							sync->Send({ kMsgBackward, 0, 0.0f, 5.0 });
+						else if (event.key.keysym.sym == SDLK_RIGHT)
+							sync->Send({ kMsgForward, 0, 0.0f, 5.0 });
+						else if (event.key.keysym.sym == SDLK_DOWN)
+							sync->Send({ kMsgRewind, 0, 0.0f, 0.0 });
+						else if (event.key.keysym.sym == SDLK_UP)
+							sync->Send({ kMsgPauseResume, 0, 0.0f, 0.0 });
+						break;
 					case SDL_QUIT:
 						sync->Term();
 						break;
@@ -492,6 +712,8 @@ namespace pioneer
 		_impl->_state = Closed;
 		_impl->_audioFrame = NULL;
 		_impl->_videoFrame = NULL;
+		_impl->_decodeAudioFrame = NULL;
+		_impl->_decodeVideoFrame = NULL;
 		if (avformat_open_input(&_impl->_demuxFormatCtx, filename, NULL, NULL) != 0 && Uninit())
 			return -2;
 		if (avformat_find_stream_info(_impl->_demuxFormatCtx, NULL) < 0 && Uninit())
@@ -547,28 +769,7 @@ namespace pioneer
 		if (_impl != NULL)
 		{
 			_impl->_sync.Uninit();
-			for (auto it = _impl->_audioFrames.begin(); it != _impl->_audioFrames.end(); it = _impl->_audioFrames.erase(it))
-			{
-				av_frame_unref(*it);
-				av_frame_free(&*it);
-			}
-			for (auto it = _impl->_videoFrames.begin(); it != _impl->_videoFrames.end(); it = _impl->_videoFrames.erase(it))
-			{
-				av_frame_unref(*it);
-				av_frame_free(&*it);
-			}
-			if (_impl->_audioFrame != NULL)
-			{
-				av_frame_unref(_impl->_audioFrame);
-				av_frame_free(&_impl->_audioFrame);
-				_impl->_audioFrame = NULL;
-			}
-			if (_impl->_videoFrame != NULL)
-			{
-				av_frame_unref(_impl->_videoFrame);
-				av_frame_free(&_impl->_videoFrame);
-				_impl->_videoFrame = NULL;
-			}
+			_impl->ClearImplement(false);
 			if (_impl->_audioCodecCtx != NULL) avcodec_close(_impl->_audioCodecCtx);
 			if (_impl->_videoCodecCtx != NULL) avcodec_close(_impl->_videoCodecCtx);
 			if (_impl->_demuxFormatCtx != NULL) avformat_close_input(&_impl->_demuxFormatCtx);
@@ -587,5 +788,12 @@ namespace pioneer
 			_impl = NULL;
 		}
 		return true;
+	}
+
+	bool SFPlayer::Seek(double seconds)
+	{
+		if (_impl == NULL)
+			return false;
+		return _impl->_sync.Send({kMsgSeek, 0, 0.0f, seconds});
 	}
 }
