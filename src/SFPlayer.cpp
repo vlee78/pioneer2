@@ -34,6 +34,68 @@ namespace pioneer
 		kMsgRewind		= 4,
 	};
 
+	
+	class StreamContext
+	{
+	public:
+		AVStream* _stream;
+		AVRational* _timebase;
+		AVCodecContext* _codecCtx;
+		AVFrame* _decodeFrame;
+		std::list<AVFrame*> _queue;
+		AVFrame* _renderFrame;
+
+		static bool Create(StreamContext* streamContext, AVStream* stream)
+		{
+
+		}
+
+		static bool Release(StreamContext*& streamContex)
+		{
+
+		}
+
+		StreamContext()
+		{
+			_stream = NULL;
+			_timebase = NULL;
+			_codecCtx = NULL;
+			_decodeFrame = NULL;
+			_queue.clear();
+			_renderFrame = NULL;
+		}
+
+		~StreamContext()
+		{
+			
+		}
+
+		void Reset()
+		{
+
+		}
+
+		double Seconds()
+		{
+
+		}
+
+		void Consume(AVPacket*& packet)
+		{
+
+		}
+
+		AVFrame* Peek()
+		{
+			return NULL;
+		}
+
+		void Pop()
+		{
+
+		}
+	};
+
 	class SFPlayer::SFPlayerImpl
 	{
 	public:
@@ -204,19 +266,25 @@ namespace pioneer
 			{
 				if (this->_audioStream != NULL)
 				{
+					avcodec_flush_buffers(this->_audioCodecCtx);
+					/*
 					if (this->_audioCodecCtx != NULL) avcodec_close(this->_audioCodecCtx);
 					AVCodec* audioCodec = avcodec_find_decoder(this->_audioStream->codecpar->codec_id);
 					this->_audioCodecCtx = avcodec_alloc_context3(audioCodec);
 					avcodec_parameters_to_context(this->_audioCodecCtx, this->_audioStream->codecpar);
 					avcodec_open2(this->_audioCodecCtx, audioCodec, NULL);
+					*/
 				}
 				if (this->_videoStream != NULL)
 				{
+					avcodec_flush_buffers(this->_videoCodecCtx);
+					/*
 					if (this->_videoCodecCtx != NULL) avcodec_close(this->_videoCodecCtx);
 					AVCodec* videoCodec = avcodec_find_decoder(this->_videoStream->codecpar->codec_id);
 					this->_videoCodecCtx = avcodec_alloc_context3(videoCodec);
 					avcodec_parameters_to_context(this->_videoCodecCtx, this->_videoStream->codecpar);
 					avcodec_open2(this->_videoCodecCtx, videoCodec, NULL);
+					*/
 				}
 			}
 		}
