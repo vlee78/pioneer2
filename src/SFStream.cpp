@@ -2,6 +2,7 @@
 
 #include "SFStream.h"
 #include "SFMutex.h"
+#include "SFUtils.h"
 #include <new>
 #include <string>
 #include <vector>
@@ -9,9 +10,9 @@
 
 namespace pioneer
 {
-	SFStream* SFStream::Create(AVStream* stream)
+	SFStream* SFStream::Create(AVStream* stream, AVRational* timebase)
 	{
-		if (stream == NULL)
+		if (stream == NULL || timebase == NULL)
 			return NULL;
 		SFStream* sfstream = new(std::nothrow) SFStream();
 		if (sfstream == NULL)
@@ -80,43 +81,49 @@ namespace pioneer
 
 	}
 
-	bool SFStream::Consume(AVPacket*& packet, )
+	bool SFStream::Push(AVPacket*& packet)
 	{
-		if (avcodec_send_packet(_context, packet) != 0)
+		if (packet == NULL || avcodec_send_packet(_context, packet) != 0)
 			return false;
+		av_packet_unref(packet);
+		av_packet_free(&packet);
+		packet = NULL;
 		while (true)
 		{
-			if (audioFrame == NULL && (audioFrame = av_frame_alloc()) == NULL && sync->Error(-14, ""))
-				break;
-			ret = avcodec_receive_frame(impl->_audioCodecCtx, audioFrame);
+			if (_frame == NULL && (_frame = av_frame_alloc()) == NULL)
+				return false;
+			int ret = avcodec_receive_frame(_context, _frame);
 			if (ret == AVERROR(EAGAIN) || ret == AVERROR_EOF)
-				break;
-			else if (ret < 0 && sync->Error(-15, ""))
-				break;
-			long long timestamp = SFUtils::TimestampToTimestamp(audioFrame->pts, impl->_audioTimebase, &impl->_commonTimebase);
-			if (timestamp >= impl->_timestamp)
+				return true;
+			else if (ret < 0)
+				return false;
+			long long timestamp = SFUtils::TimestampToTimestamp(_frame->pts, &_stream->time_base, _timebase);
+			if (timestamp >= _timestamp)
 			{
-				impl->_mutex.Enter();
-				impl->_audioFrames.push_back(audioFrame);
-				impl->_mutex.Leave();
-				audioFrame = NULL;
+				_mutex.Enter();
+				_frames.push_back(_frame);
+				_mutex.Leave();
+				_frame = NULL;
 			}
 			else
 			{
-				av_frame_unref(audioFrame);
-				av_frame_free(&audioFrame);
-				audioFrame = NULL;
+				av_frame_unref(_frame);
+				av_frame_free(&_frame);
+				_frame = NULL;
 			}
 		}
 	}
 
-	AVFrame* SFStream::Peak()
+	AVFrame* SFStream::Pop()
 	{
-
-	}
-
-	bool SFStream::Pop()
-	{
-
+		AVFrame* frame = NULL;
+		_mutex.Enter();
+		if (_frames.size() > 0)
+		{
+			frame = _frames.front();
+			_frames.pop_front();
+		}
+		_mutex.Leave();
+		return frame;
 	}
 }
