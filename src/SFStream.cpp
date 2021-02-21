@@ -68,17 +68,17 @@ namespace pioneer
 
 	long long SFStream::GetHead(AVRational* timebase)
 	{
-
+		return 0;
 	}
 
 	long long SFStream::GetTail(AVRational* timebase)
 	{
-
+		return 0;
 	}
 
 	long long SFStream::GetSize(AVRational* timebase)
 	{
-
+		return 0;
 	}
 
 	bool SFStream::Push(AVPacket*& packet)
