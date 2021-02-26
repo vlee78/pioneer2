@@ -24,7 +24,7 @@ namespace pioneer
 	public:
 		SFPlayer();
 		~SFPlayer();
-		long long Init(const char* filename, Flag flag = Default);
+		long long Init(const char* filename, Flag flag, void* hwnd);
 		bool Uninit();
 		bool Seek(double seconds);
 

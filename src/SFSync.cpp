@@ -231,11 +231,21 @@ namespace pioneer
 		return true;
 	}
 
-	bool SFSync::Send(const SFMsg& msg)
+	bool SFSync::Send(const SFMsg& msg, bool merge)
 	{
 		SFMutexScoped lock(&__mutex);
 		if (_impl == NULL)
 			return false;
+		if (merge)
+		{
+			for (auto it = _impl->_msgs.begin(); it != _impl->_msgs.end();)
+			{
+				if (it->_id == msg._id)
+					it = _impl->_msgs.erase(it);
+				else
+					it++;
+			}
+		}
 		_impl->_msgs.push_back(msg);
 		return true;
 	}

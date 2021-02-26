@@ -9,7 +9,8 @@ namespace pioneer
 	struct SFMsg
 	{
 		int _id;
-		long long _llparam;
+		long long _llparam0;
+		long long _llparam1;
 		float _fparam;
 		double _dparam;
 	};
@@ -27,7 +28,7 @@ namespace pioneer
 		bool Poll(SFThread* thread, SFMsg& msg);
 		bool Spawn(const char* name, SFFunc func, void* param);
 
-		bool Send(const SFMsg& msg);
+		bool Send(const SFMsg& msg, bool merge = false);
 		bool Error(int code, const char* error);
 		bool Term();
 

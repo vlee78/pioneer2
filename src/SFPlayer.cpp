@@ -27,11 +27,12 @@ namespace pioneer
 {
 	enum MsgId
 	{
-		kMsgPauseResume = 0,
-		kMsgSeek		= 1,
-		kMsgBackward	= 2,
-		kMsgForward		= 3,
-		kMsgRewind		= 4,
+		kMsgPauseResume			= 0,
+		kMsgSeek				= 1,
+		kMsgBackward			= 2,
+		kMsgForward				= 3,
+		kMsgRewind				= 4,
+		kMsgWindowSizeChanged	= 5,
 	};
 
 	
@@ -122,6 +123,7 @@ namespace pioneer
 		AVFrame* _decodeAudioFrame;
 		AVFrame* _decodeVideoFrame;
 		long long _startTs;
+		void* _hwnd;
 
 		static long long Seek(SFPlayer::SFPlayerImpl* impl, double seekto)
 		{
@@ -632,6 +634,38 @@ namespace pioneer
 						continue;
 					impl->_state = Buffering;
 				}
+				else if (msg._id == kMsgWindowSizeChanged)
+				{
+					if (impl->_renderTexture != NULL)
+					{
+						SDL_DestroyTexture(impl->_renderTexture);
+						impl->_renderTexture = NULL;
+					}
+					if (impl->_renderRenderer != NULL)
+					{
+						SDL_RenderClear(impl->_renderRenderer);
+						impl->_renderRenderer = NULL;
+					}
+					if (impl->_renderWindow != NULL)
+					{
+						SDL_DestroyWindow(impl->_renderWindow);
+						impl->_renderWindow = NULL;
+					}
+					int width = impl->_videoStream->codecpar[impl->_videoStream->index].width;
+					int height = impl->_videoStream->codecpar[impl->_videoStream->index].height;
+					if (impl->_hwnd == NULL)
+						impl->_renderWindow = SDL_CreateWindow("RenderWindow", 100, 100, width / 2, height / 2, SDL_WINDOW_SHOWN);
+					else
+						impl->_renderWindow = SDL_CreateWindowFrom(impl->_hwnd);
+					if (impl->_renderWindow == NULL && sync->Error(-3, ""))
+						continue;
+					impl->_renderRenderer = SDL_CreateRenderer(impl->_renderWindow, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
+					if (impl->_renderRenderer == NULL && sync->Error(-4, ""))
+						continue;
+					impl->_renderTexture = SDL_CreateTexture(impl->_renderRenderer, SDL_PIXELFORMAT_IYUV, SDL_TEXTUREACCESS_STREAMING, width, height);
+					if (impl->_renderTexture == NULL && sync->Error(-5, ""))
+						continue;
+				}
 				else
 				{
 					SDL_Delay(100);
@@ -644,6 +678,7 @@ namespace pioneer
 			SFPlayerImpl* impl = (SFPlayerImpl*)param;
 			if (SDL_Init(SDL_INIT_AUDIO | SDL_INIT_VIDEO | SDL_INIT_TIMER) != 0 && sync->Error(-1, ""))
 				goto end;
+			SDL_SetHint(SDL_HINT_RENDER_DRIVER, "opengl");
 			if (impl->_audioStream)
 			{
 				SDL_AudioSpec want;
@@ -666,7 +701,10 @@ namespace pioneer
 			{
 				int width = impl->_videoStream->codecpar[impl->_videoStream->index].width;
 				int height = impl->_videoStream->codecpar[impl->_videoStream->index].height;
-				impl->_renderWindow = SDL_CreateWindow("RenderWindow", 100, 100, width/2, height/2, SDL_WINDOW_SHOWN);
+				if (impl->_hwnd)
+					impl->_renderWindow = SDL_CreateWindowFrom(impl->_hwnd);
+				else
+					impl->_renderWindow = SDL_CreateWindow("RenderWindow", 100, 100, width/2, height/2, SDL_WINDOW_SHOWN);
 				if (impl->_renderWindow == NULL && sync->Error(-3, ""))
 					goto end;
 				impl->_renderRenderer = SDL_CreateRenderer(impl->_renderWindow, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
@@ -691,16 +729,24 @@ namespace pioneer
 					{
 					case SDL_KEYDOWN:
 						if (event.key.keysym.sym == SDLK_LEFT)
-							sync->Send({ kMsgBackward, 0, 0.0f, 5.0 });
+							sync->Send({ kMsgBackward, 0, 0, 0.0f, 5.0 });
 						else if (event.key.keysym.sym == SDLK_RIGHT)
-							sync->Send({ kMsgForward, 0, 0.0f, 5.0 });
+							sync->Send({ kMsgForward, 0, 0, 0.0f, 5.0 });
 						else if (event.key.keysym.sym == SDLK_DOWN)
-							sync->Send({ kMsgRewind, 0, 0.0f, 0.0 });
+							sync->Send({ kMsgRewind, 0, 0, 0.0f, 0.0 });
 						else if (event.key.keysym.sym == SDLK_UP)
-							sync->Send({ kMsgPauseResume, 0, 0.0f, 0.0 });
+							sync->Send({ kMsgPauseResume, 0, 0, 0.0f, 0.0 });
 						break;
 					case SDL_QUIT:
 						sync->Term();
+						break;
+					case SDL_WINDOWEVENT:
+						switch (event.window.event)
+						{
+						case SDL_WINDOWEVENT_SIZE_CHANGED:
+							sync->Send({ kMsgWindowSizeChanged, event.window.data1, event.window.data2, 0.0f, 0.0 }, true);
+							break;
+						};
 						break;
 					};
 				}
@@ -756,7 +802,7 @@ namespace pioneer
 		return frameSize;
 	}
 
-	long long SFPlayer::Init(const char* filename, Flag flag)
+	long long SFPlayer::Init(const char* filename, Flag flag, void* hwnd)
 	{
 		Uninit();
 		_impl = new(std::nothrow) SFPlayerImpl();
@@ -782,6 +828,7 @@ namespace pioneer
 		_impl->_videoFrame = NULL;
 		_impl->_decodeAudioFrame = NULL;
 		_impl->_decodeVideoFrame = NULL;
+		_impl->_hwnd = hwnd;
 		if (avformat_open_input(&_impl->_demuxFormatCtx, filename, NULL, NULL) != 0 && Uninit())
 			return -2;
 		if (avformat_find_stream_info(_impl->_demuxFormatCtx, NULL) < 0 && Uninit())
@@ -852,6 +899,7 @@ namespace pioneer
 			_impl->_audioCodecCtx = NULL;
 			_impl->_videoCodecCtx = NULL;
 			_impl->_demuxFormatCtx = NULL;
+			_impl->_hwnd = NULL;
 			delete _impl;
 			_impl = NULL;
 		}
@@ -862,6 +910,6 @@ namespace pioneer
 	{
 		if (_impl == NULL)
 			return false;
-		return _impl->_sync.Send({kMsgSeek, 0, 0.0f, seconds});
+		return _impl->_sync.Send({kMsgSeek, 0, 0, 0.0f, seconds});
 	}
 }
