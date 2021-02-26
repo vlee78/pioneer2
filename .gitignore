@@ -14,3 +14,7 @@ build/windows/pioneer/pioneer.VC.db
 /run/pioneer/Oklahoma.mkv
 /run/pioneer/log.txt
 /run/pioneer/Nevada.mkv
+/test/windows/qtplayer/x64
+/test/windows/qtplayer/.vs
+/test/windows/qtplayer/qtplayer.VC.db
+/test/windows/qtplayer/qtplayer.vcxproj.user

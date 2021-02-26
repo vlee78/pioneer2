@@ -13,9 +13,7 @@
   <PropertyGroup Label="Globals">
     <ProjectGuid>{A32D55BC-ED57-4E99-98CD-967A763EC8C1}</ProjectGuid>
     <Keyword>QtVS_v303</Keyword>
-
-    <QtMsBuild Condition="'$(QtMsBuild)'=='' OR !Exists('$(QtMsBuild)\qt.targets')"
-      >$(MSBuildProjectDirectory)\QtMsBuild</QtMsBuild>
+    <QtMsBuild Condition="'$(QtMsBuild)'=='' OR !Exists('$(QtMsBuild)\qt.targets')">$(MSBuildProjectDirectory)\QtMsBuild</QtMsBuild>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Debug|x64'" Label="Configuration">
@@ -27,11 +25,8 @@
     <PlatformToolset>v140</PlatformToolset>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
-  <Target Name="QtMsBuildNotFound"
-    BeforeTargets="CustomBuild;ClCompile"
-    Condition="!Exists('$(QtMsBuild)\qt.targets') or !Exists('$(QtMsBuild)\qt.props')">
-    <Message Importance="High"
-      Text="QtMsBuild: could not locate qt.targets, qt.props; project may not build correctly." />
+  <Target Name="QtMsBuildNotFound" BeforeTargets="CustomBuild;ClCompile" Condition="!Exists('$(QtMsBuild)\qt.targets') or !Exists('$(QtMsBuild)\qt.props')">
+    <Message Importance="High" Text="QtMsBuild: could not locate qt.targets, qt.props; project may not build correctly." />
   </Target>
   <ImportGroup Label="ExtensionSettings" />
   <ImportGroup Label="Shared" />
@@ -46,9 +41,29 @@
     <Import Project="$(QtMsBuild)\qt_defaults.props" />
   </ImportGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Debug|x64'">
+    <IncludePath>..\..\..\3rdparty\ffmpeg\windows\include;..\..\..\3rdparty\sdl2\windows\include;$(IncludePath)</IncludePath>
+    <LibraryPath>..\..\..\3rdparty\ffmpeg\windows\lib;..\..\..\3rdparty\sdl2\windows\lib;$(LibraryPath)</LibraryPath>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Release|x64'">
+    <IncludePath>..\..\..\3rdparty\ffmpeg\windows\include;..\..\..\3rdparty\sdl2\windows\include;$(IncludePath)</IncludePath>
+    <LibraryPath>..\..\..\3rdparty\ffmpeg\windows\lib;..\..\..\3rdparty\sdl2\windows\lib;$(LibraryPath)</LibraryPath>
   </PropertyGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <ClCompile>
+      <AdditionalIncludeDirectories>..\..\..\src;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+    </ClCompile>
+    <Link>
+      <AdditionalDependencies>swscale.lib;swresample.lib;postproc.lib;avfilter.lib;avdevice.lib;avcodec.lib;avutil.lib;avformat.lib;SDL2.lib;%(AdditionalDependencies)</AdditionalDependencies>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <ClCompile>
+      <AdditionalIncludeDirectories>..\..\..\src;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+    </ClCompile>
+    <Link>
+      <AdditionalDependencies>swscale.lib;swresample.lib;postproc.lib;avfilter.lib;avdevice.lib;avcodec.lib;avutil.lib;avformat.lib;SDL2.lib;%(AdditionalDependencies)</AdditionalDependencies>
+    </Link>
+  </ItemDefinitionGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Debug|x64'" Label="QtSettings">
     <QtInstall>msvc2015_64</QtInstall>
     <QtModules>core;gui;widgets</QtModules>
@@ -89,12 +104,21 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <QtRcc Include="QtPlayer.qrc"/>
-    <QtUic Include="QtPlayer.ui"/>
-    <QtMoc Include="QtPlayer.h"/>
-    <ClCompile Include="QtPlayer.cpp"/>
-    <ClCompile Include="main.cpp"/>
-
+    <QtRcc Include="QtPlayer.qrc" />
+    <QtUic Include="QtPlayer.ui" />
+    <QtMoc Include="QtPlayer.h" />
+    <ClCompile Include="..\..\..\src\SFMutex.cpp" />
+    <ClCompile Include="..\..\..\src\SFPlayer.cpp" />
+    <ClCompile Include="..\..\..\src\SFSync.cpp" />
+    <ClCompile Include="..\..\..\src\SFUtils.cpp" />
+    <ClCompile Include="QtPlayer.cpp" />
+    <ClCompile Include="main.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="..\..\..\src\SFMutex.h" />
+    <ClInclude Include="..\..\..\src\SFPlayer.h" />
+    <ClInclude Include="..\..\..\src\SFSync.h" />
+    <ClInclude Include="..\..\..\src\SFUtils.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Condition="Exists('$(QtMsBuild)\qt.targets')">

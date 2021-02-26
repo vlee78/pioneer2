@@ -5,3 +5,7 @@ QtPlayer::QtPlayer(QWidget *parent)
 {
     ui.setupUi(this);
 }
+
+QtPlayer::~QtPlayer()
+{
+}

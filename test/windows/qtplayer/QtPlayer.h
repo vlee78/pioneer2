@@ -9,6 +9,7 @@ class QtPlayer : public QMainWindow
 
 public:
     QtPlayer(QWidget *parent = Q_NULLPTR);
+	~QtPlayer();
 
 private:
     Ui::QtPlayerClass ui;

@@ -10,6 +10,9 @@
       <Extensions>qrc;*</Extensions>
       <ParseFiles>false</ParseFiles>
     </Filter>
+    <Filter Include="qt">
+      <UniqueIdentifier>{6844ea93-fa5d-4132-822e-9686f79601fb}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <QtRcc Include="QtPlayer.qrc">
@@ -20,10 +23,26 @@
     </QtUic>
   </ItemGroup>
   <ItemGroup>
-    <QtMoc Include="QtPlayer.h" />
+    <ClCompile Include="main.cpp">
+      <Filter>qt</Filter>
+    </ClCompile>
+    <ClCompile Include="QtPlayer.cpp">
+      <Filter>qt</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\..\src\SFMutex.cpp" />
+    <ClCompile Include="..\..\..\src\SFPlayer.cpp" />
+    <ClCompile Include="..\..\..\src\SFSync.cpp" />
+    <ClCompile Include="..\..\..\src\SFUtils.cpp" />
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="main.cpp" />
-    <ClCompile Include="QtPlayer.cpp" />
+    <QtMoc Include="QtPlayer.h">
+      <Filter>qt</Filter>
+    </QtMoc>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="..\..\..\src\SFMutex.h" />
+    <ClInclude Include="..\..\..\src\SFPlayer.h" />
+    <ClInclude Include="..\..\..\src\SFSync.h" />
+    <ClInclude Include="..\..\..\src\SFUtils.h" />
   </ItemGroup>
 </Project>
