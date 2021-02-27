@@ -455,7 +455,7 @@ namespace pioneer
 				}
 				long long timestamp = SFUtils::TimestampToTimestamp(frame->best_effort_timestamp, impl->_videoTimebase, &impl->_commonTimebase);
 				long long duration = SFUtils::TimestampToTimestamp(frame->pkt_duration, impl->_videoTimebase, &impl->_commonTimebase);
-				if (timestamp <= impl->_timestamp)
+				if (timestamp <= impl->_timestamp && impl->_renderRenderer != NULL && impl->_renderTexture != NULL)
 				{
 					if (SDL_UpdateYUVTexture(impl->_renderTexture, NULL, frame->data[0], frame->linesize[0], frame->data[1],
 						frame->linesize[1], frame->data[2], frame->linesize[2]) != 0 && sync->Error(-41, ""))
@@ -673,53 +673,9 @@ namespace pioneer
 			}
 		}
 
-		static void MainThread(SFSync* sync, SFThread* thread, void* param)
+		static void SdlThread(SFSync* sync, SFThread* thread, void* param)
 		{
 			SFPlayerImpl* impl = (SFPlayerImpl*)param;
-			if (SDL_Init(SDL_INIT_AUDIO | SDL_INIT_VIDEO | SDL_INIT_TIMER) != 0 && sync->Error(-1, ""))
-				goto end;
-			SDL_SetHint(SDL_HINT_RENDER_DRIVER, "opengl");
-			if (impl->_audioStream)
-			{
-				SDL_AudioSpec want;
-				SDL_zero(want);
-				want.freq = impl->_audioStream->codecpar->sample_rate;
-				want.format = AUDIO_S16SYS;
-				want.channels = 2;
-				want.samples = impl->_audioDeviceSamples;
-				want.callback = SFPlayerImpl::AudioDevice;
-				want.userdata = impl;
-				want.padding = 52428;
-				SDL_AudioSpec real;
-				SDL_zero(real);
-				SDL_AudioDeviceID audioDeviceId = SDL_OpenAudioDevice(NULL, 0, &want, &real, 0);
-				if (audioDeviceId == 0 && sync->Error(-2, ""))
-					goto end;
-				SDL_PauseAudioDevice(audioDeviceId, 0);
-			}
-			if (impl->_videoStream)
-			{
-				int width = impl->_videoStream->codecpar[impl->_videoStream->index].width;
-				int height = impl->_videoStream->codecpar[impl->_videoStream->index].height;
-				if (impl->_hwnd)
-					impl->_renderWindow = SDL_CreateWindowFrom(impl->_hwnd);
-				else
-					impl->_renderWindow = SDL_CreateWindow("RenderWindow", 100, 100, width/2, height/2, SDL_WINDOW_SHOWN);
-				if (impl->_renderWindow == NULL && sync->Error(-3, ""))
-					goto end;
-				impl->_renderRenderer = SDL_CreateRenderer(impl->_renderWindow, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
-				if (impl->_renderRenderer == NULL && sync->Error(-4, ""))
-					goto end;
-				impl->_renderTexture = SDL_CreateTexture(impl->_renderRenderer, SDL_PIXELFORMAT_IYUV, SDL_TEXTUREACCESS_STREAMING, width, height);
-				if (impl->_renderTexture == NULL && sync->Error(-5, ""))
-					goto end;
-			}
-			if (impl->_videoStream && sync->Spawn("RenderThread", SFPlayerImpl::RenderThread, impl) == false && sync->Error(-6, ""))
-				goto end;
-			if (sync->Spawn("DecodeThread", SFPlayerImpl::DecodeThread, impl) == false && sync->Error(-7, ""))
-				goto end;
-			if (sync->Spawn("PollThread", SFPlayerImpl::PollThread, impl) == false && sync->Error(-8, ""))
-				goto end;
 			while (sync->Loop(thread))
 			{
 				SDL_Event event;
@@ -751,13 +707,6 @@ namespace pioneer
 					};
 				}
 			}
-		end:
-			if (impl->_renderTexture != NULL) SDL_DestroyTexture(impl->_renderTexture);
-			if (impl->_renderRenderer != NULL) SDL_RenderClear(impl->_renderRenderer);
-			if (impl->_renderWindow != NULL) SDL_DestroyWindow(impl->_renderWindow);
-			impl->_renderWindow = NULL;
-			impl->_renderRenderer = NULL;
-			SDL_Quit();
 		}
 	};
 
@@ -872,10 +821,53 @@ namespace pioneer
 		printf("audioDeviceSamples = %d\n", _impl->_audioDeviceSamples);
 		_impl->_state = Buffering;
 		_impl->_commonTimebase = SFUtils::CommonTimebase(_impl->_audioTimebase, _impl->_videoTimebase);
+		
+		if (SDL_Init(SDL_INIT_AUDIO | SDL_INIT_VIDEO | SDL_INIT_TIMER) != 0 && Uninit())
+			return -13;
+		if (SDL_SetHint(SDL_HINT_RENDER_DRIVER, "opengl") != SDL_TRUE && Uninit())
+			return -14;
+
+		int width = _impl->_videoStream->codecpar[_impl->_videoStream->index].width;
+		int height = _impl->_videoStream->codecpar[_impl->_videoStream->index].height;
+		if (_impl->_hwnd)
+			_impl->_renderWindow = SDL_CreateWindowFrom(_impl->_hwnd);
+		else
+			_impl->_renderWindow = SDL_CreateWindow("RenderWindow", 100, 100, width / 2, height / 2, SDL_WINDOW_SHOWN);
+		if (_impl->_renderWindow == NULL && Uninit())
+			return -15;
+		_impl->_renderRenderer = SDL_CreateRenderer(_impl->_renderWindow, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
+		if (_impl->_renderRenderer == NULL && Uninit())
+			return -16;
+		_impl->_renderTexture = SDL_CreateTexture(_impl->_renderRenderer, SDL_PIXELFORMAT_IYUV, SDL_TEXTUREACCESS_STREAMING, width, height);		
+		if (_impl->_renderTexture == NULL && Uninit())
+			return -17;
+		
+		SDL_AudioSpec want;
+		SDL_zero(want);
+		want.freq = _impl->_audioStream->codecpar->sample_rate;
+		want.format = AUDIO_S16SYS;
+		want.channels = 2;
+		want.samples = _impl->_audioDeviceSamples;
+		want.callback = SFPlayerImpl::AudioDevice;
+		want.userdata = _impl;
+		want.padding = 52428;
+		SDL_AudioSpec real;
+		SDL_zero(real);
+		SDL_AudioDeviceID audioDeviceId = SDL_OpenAudioDevice(NULL, 0, &want, &real, 0);
+		if (audioDeviceId == 0 && Uninit())
+			return -18;
+		SDL_PauseAudioDevice(audioDeviceId, 0);
+		
 		if (_impl->_sync.Init() == false && Uninit())
 			return -13;
-		if (_impl->_sync.Spawn("MainThread", SFPlayerImpl::MainThread, _impl) == false && Uninit())
+		if (_impl->_sync.Spawn("SdlThread", SFPlayerImpl::SdlThread, _impl) == false && Uninit())
 			return -14;
+		if (_impl->_videoStream && _impl->_sync.Spawn("RenderThread", SFPlayerImpl::RenderThread, _impl) == false && _impl->_sync.Error(-6, "") && Uninit())
+			return -15;
+		if (_impl->_sync.Spawn("DecodeThread", SFPlayerImpl::DecodeThread, _impl) == false && _impl->_sync.Error(-7, "") && Uninit())
+			return -16;
+		if (_impl->_sync.Spawn("PollThread", SFPlayerImpl::PollThread, _impl) == false && _impl->_sync.Error(-8, "") && Uninit())
+			return -17;
 		return 0;
 	}
 
@@ -884,6 +876,20 @@ namespace pioneer
 		if (_impl != NULL)
 		{
 			_impl->_sync.Uninit();
+
+			
+			if (_impl->_renderTexture != NULL)
+				SDL_DestroyTexture(_impl->_renderTexture);
+			if (_impl->_renderRenderer != NULL)
+				SDL_RenderClear(_impl->_renderRenderer);
+			if (_impl->_renderWindow != NULL)
+				SDL_DestroyWindow(_impl->_renderWindow);
+			_impl->_renderTexture = NULL;
+			_impl->_renderWindow = NULL;
+			_impl->_renderRenderer = NULL;
+			SDL_Quit();
+
+
 			_impl->ClearImplement(false);
 			if (_impl->_audioCodecCtx != NULL) avcodec_close(_impl->_audioCodecCtx);
 			if (_impl->_videoCodecCtx != NULL) avcodec_close(_impl->_videoCodecCtx);
