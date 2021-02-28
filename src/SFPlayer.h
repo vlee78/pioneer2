@@ -1,5 +1,7 @@
 #pragma once
 
+#include <stdio.h>
+
 namespace pioneer
 {
 	class SFPlayer
@@ -24,7 +26,7 @@ namespace pioneer
 	public:
 		SFPlayer();
 		~SFPlayer();
-		long long Init(const char* filename, Flag flag, void* hwnd);
+		long long Init(const char* filename, Flag flag = Default, void* hwnd = NULL);
 		bool Uninit();
 		bool Seek(double seconds);
 

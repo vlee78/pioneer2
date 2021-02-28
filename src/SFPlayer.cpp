@@ -460,7 +460,8 @@ namespace pioneer
 					if (SDL_UpdateYUVTexture(impl->_renderTexture, NULL, frame->data[0], frame->linesize[0], frame->data[1],
 						frame->linesize[1], frame->data[2], frame->linesize[2]) != 0 && sync->Error(-41, ""))
 						continue;
-					if (SDL_RenderCopy(impl->_renderRenderer, impl->_renderTexture, NULL, NULL) != 0 && sync->Error(-42, ""))
+					int ret = SDL_RenderCopy(impl->_renderRenderer, impl->_renderTexture, NULL, NULL);
+					if (ret != 0 && sync->Error(-42, ""))
 						continue;
 					SDL_RenderPresent(impl->_renderRenderer);
 					av_frame_unref(frame);
@@ -824,7 +825,7 @@ namespace pioneer
 		
 		if (SDL_Init(SDL_INIT_AUDIO | SDL_INIT_VIDEO | SDL_INIT_TIMER) != 0 && Uninit())
 			return -13;
-		if (SDL_SetHint(SDL_HINT_RENDER_DRIVER, "opengl") != SDL_TRUE && Uninit())
+		if (_impl->_hwnd && SDL_SetHint(SDL_HINT_RENDER_DRIVER, "opengl") != SDL_TRUE && Uninit())
 			return -14;
 
 		int width = _impl->_videoStream->codecpar[_impl->_videoStream->index].width;
