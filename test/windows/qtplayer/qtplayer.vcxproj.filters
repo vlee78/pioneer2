@@ -33,6 +33,7 @@
     <ClCompile Include="..\..\..\src\SFPlayer.cpp" />
     <ClCompile Include="..\..\..\src\SFSync.cpp" />
     <ClCompile Include="..\..\..\src\SFUtils.cpp" />
+    <ClCompile Include="..\..\..\src\SFSubtitle.cpp" />
   </ItemGroup>
   <ItemGroup>
     <QtMoc Include="QtPlayer.h">
@@ -44,5 +45,6 @@
     <ClInclude Include="..\..\..\src\SFPlayer.h" />
     <ClInclude Include="..\..\..\src\SFSync.h" />
     <ClInclude Include="..\..\..\src\SFUtils.h" />
+    <ClInclude Include="..\..\..\src\SFSubtitle.h" />
   </ItemGroup>
 </Project>

@@ -109,6 +109,7 @@
     <QtMoc Include="QtPlayer.h" />
     <ClCompile Include="..\..\..\src\SFMutex.cpp" />
     <ClCompile Include="..\..\..\src\SFPlayer.cpp" />
+    <ClCompile Include="..\..\..\src\SFSubtitle.cpp" />
     <ClCompile Include="..\..\..\src\SFSync.cpp" />
     <ClCompile Include="..\..\..\src\SFUtils.cpp" />
     <ClCompile Include="QtPlayer.cpp" />
@@ -117,6 +118,7 @@
   <ItemGroup>
     <ClInclude Include="..\..\..\src\SFMutex.h" />
     <ClInclude Include="..\..\..\src\SFPlayer.h" />
+    <ClInclude Include="..\..\..\src\SFSubtitle.h" />
     <ClInclude Include="..\..\..\src\SFSync.h" />
     <ClInclude Include="..\..\..\src\SFUtils.h" />
   </ItemGroup>
