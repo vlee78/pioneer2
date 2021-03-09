@@ -919,4 +919,21 @@ namespace pioneer
 			return false;
 		return _impl->_sync.Send({kMsgSeek, 0, 0, 0.0f, seconds});
 	}
+
+	bool SFPlayer::GetState(State& state, double& seconds)
+	{
+		if (_impl == NULL)
+			return false;
+		state = _impl->_state;
+		seconds = SFUtils::TimestampToSeconds(_impl->_timestamp, &_impl->_commonTimebase);
+		return true;
+	}
+
+	bool SFPlayer::GetDuration(double& seconds)
+	{
+		if (_impl == NULL)
+			return false;
+		seconds = _impl->_demuxFormatCtx->duration / (double)AV_TIME_BASE;
+		return true;
+	}
 }

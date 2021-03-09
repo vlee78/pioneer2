@@ -4,6 +4,15 @@
 
 namespace pioneer
 {
+	static const char* StateName[] =
+	{
+		"Closed",
+		"Paused",
+		"Buffering",
+		"Playing",
+		"Eof",
+	};
+
 	class SFPlayer
 	{
 	public:
@@ -29,6 +38,8 @@ namespace pioneer
 		long long Init(const char* filename, Flag flag = Default, void* hwnd = NULL);
 		bool Uninit();
 		bool Seek(double seconds);
+		bool GetState(State& state, double& seconds);
+		bool GetDuration(double& seconds);
 
 	private:
 		class SFPlayerImpl;

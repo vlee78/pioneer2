@@ -18,3 +18,4 @@ build/windows/pioneer/pioneer.VC.db
 /test/windows/qtplayer/.vs
 /test/windows/qtplayer/qtplayer.VC.db
 /test/windows/qtplayer/qtplayer.vcxproj.user
+/test/windows/qtplayer/qtplayer.VC.VC.opendb
