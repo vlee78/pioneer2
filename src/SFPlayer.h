@@ -38,6 +38,7 @@ namespace pioneer
 		long long Init(const char* filename, Flag flag = Default, void* hwnd = NULL);
 		bool Uninit();
 		bool Seek(double seconds);
+		bool Reszie();
 		bool GetState(State& state, double& seconds);
 		bool GetDuration(double& seconds);
 

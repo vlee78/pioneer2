@@ -920,6 +920,13 @@ namespace pioneer
 		return _impl->_sync.Send({kMsgSeek, 0, 0, 0.0f, seconds});
 	}
 
+	bool SFPlayer::Reszie()
+	{
+		if (_impl == NULL)
+			return false;
+		return _impl->_sync.Send({ kMsgWindowSizeChanged, 0, 0, 0.0f, 0.0 }, true);
+	}
+
 	bool SFPlayer::GetState(State& state, double& seconds)
 	{
 		if (_impl == NULL)

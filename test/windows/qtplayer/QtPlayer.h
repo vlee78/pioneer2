@@ -19,6 +19,8 @@ private:
     Ui::QtPlayerClass ui;
 
 	pioneer::SFPlayer _player;
+
+	QWidget* _canvas;
 	QPushButton* _btnForward;
 	QPushButton* _btnBackward;
 
@@ -37,5 +39,9 @@ private slots:
 	void on_sliderReleased();
 	void on_sliderChanged(int value);
 
-	virtual void timerEvent(QTimerEvent *event);
+	virtual void timerEvent(QTimerEvent* event);
+
+	virtual void keyPressEvent(QKeyEvent* e);
+
+	virtual bool eventFilter(QObject *target, QEvent *e);
 };

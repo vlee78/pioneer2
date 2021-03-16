@@ -1,13 +1,14 @@
 #include "QtPlayer.h"
 #include <qboxlayout.h>
+#include <qevent.h>
 
 QtPlayer::QtPlayer(QWidget *parent)
     : QMainWindow(parent)
 {
     ui.setupUi(this);
 
-	QWidget* player = new QWidget();
-	player->setStyleSheet("background-color: orange");
+	_canvas = new QWidget();
+	_canvas->setStyleSheet("background-color: orange");
 
 	QWidget* panel = new QWidget();
 	panel->setStyleSheet("background-color: #bbbbbb");
@@ -42,7 +43,7 @@ QtPlayer::QtPlayer(QWidget *parent)
 	panel->setLayout(hl);
 
 	QVBoxLayout* vl = new QVBoxLayout();
-	vl->addWidget(player);
+	vl->addWidget(_canvas);
 	vl->addWidget(panel);
 
 	QWidget* frame = findChild<QWidget*>("centralWidget");
@@ -55,8 +56,12 @@ QtPlayer::QtPlayer(QWidget *parent)
 	connect(_slider, SIGNAL(sliderPressed()), this, SLOT(on_sliderPressed()));
 	connect(_slider, SIGNAL(sliderReleased()), this, SLOT(on_sliderReleased()));
 
+	//_canvas->setWindowFlags(Qt::Window);
+	//_canvas->showFullScreen();
 
-	HWND hwnd = (HWND)player->winId();
+	_canvas->installEventFilter(this);
+
+	HWND hwnd = (HWND)_canvas->winId();
 	_player.Init("lyl.mp4", pioneer::SFPlayer::Default, hwnd);
 
 	_refreshTimer = startTimer(100);
@@ -127,4 +132,42 @@ void QtPlayer::on_sliderPressed()
 void QtPlayer::on_sliderReleased()
 {
 	_sliderDragging = false;
+}
+
+void QtPlayer::keyPressEvent(QKeyEvent* e)
+{
+	int key = e->key();
+	switch (key)
+	{
+	case Qt::Key_Return:
+		_canvas->setWindowFlags(Qt::Window);
+		_canvas->showFullScreen();
+		_player.Reszie();
+		break;
+	case Qt::Key_Escape:
+		_canvas->setWindowFlags(Qt::SubWindow);
+		_canvas->showNormal();
+		_player.Reszie();
+		break;
+	};
+}
+
+bool QtPlayer::eventFilter(QObject *target, QEvent *e)
+{
+	if (target == _canvas)
+	{
+		if (e->type() == QEvent::KeyPress)
+		{
+			QKeyEvent *keyEvent = static_cast<QKeyEvent *>(e);
+			if (keyEvent->key() == Qt::Key_Escape)
+			{
+				_canvas->setWindowFlags(Qt::SubWindow);
+				_canvas->showNormal();
+				//_canvas->setGeometry(10, 10, 780, 450);
+				//变回原来大小，具体尺寸根据原来的定
+			}
+		}
+	}
+	return QMainWindow::eventFilter(target, e);
+
 }
