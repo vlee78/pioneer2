@@ -51,14 +51,9 @@ QtPlayer::QtPlayer(QWidget *parent)
 
 	connect(_btnBackward, SIGNAL(clicked()), this, SLOT(on_btnBackwardClicked()));
 	connect(_btnForward, SIGNAL(clicked()), this, SLOT(on_btnForwardClicked()));
-	
 	connect(_slider, SIGNAL(valueChanged(int)), this, SLOT(on_sliderChanged(int)));
 	connect(_slider, SIGNAL(sliderPressed()), this, SLOT(on_sliderPressed()));
 	connect(_slider, SIGNAL(sliderReleased()), this, SLOT(on_sliderReleased()));
-
-	//_canvas->setWindowFlags(Qt::Window);
-	//_canvas->showFullScreen();
-
 	_canvas->installEventFilter(this);
 
 	HWND hwnd = (HWND)_canvas->winId();
@@ -66,6 +61,7 @@ QtPlayer::QtPlayer(QWidget *parent)
 
 	_refreshTimer = startTimer(100);
 	_sliderDragging = false;
+	_fullScreen = false;
 }
 
 QtPlayer::~QtPlayer()
@@ -116,6 +112,33 @@ void QtPlayer::timerEvent(QTimerEvent *event)
 	}
 }
 
+QPoint pt(0, 0);
+QSize sz(0, 0);
+
+void QtPlayer::SetFullScreen(bool fullScreen)
+{
+	if (_fullScreen != fullScreen)
+	{
+		if (fullScreen)
+		{
+			pt = _canvas->pos();
+			sz = _canvas->size();
+			_canvas->setWindowFlags(Qt::Window);
+			_canvas->showFullScreen();
+			_player.Reszie();
+		}
+		else
+		{
+			_canvas->setWindowFlags(Qt::SubWindow);
+			QRect rect(&pt.x, &pt.y, &sz.width, &sz.height);
+			_canvas->setGeometry(rect);
+			_canvas->showNormal();
+			_player.Reszie();
+		}
+		_fullScreen = fullScreen;
+	}
+}
+
 void QtPlayer::on_sliderChanged(int value)
 {
 	double duration = 0.0;
@@ -134,40 +157,35 @@ void QtPlayer::on_sliderReleased()
 	_sliderDragging = false;
 }
 
+void QtPlayer::mouseDoubleClickEvent(QMouseEvent* e)
+{
+	if (e->button() == Qt::LeftButton)
+		SetFullScreen(!_fullScreen);
+	QMainWindow::mouseDoubleClickEvent(e);
+}
+
 void QtPlayer::keyPressEvent(QKeyEvent* e)
 {
-	int key = e->key();
-	switch (key)
+	switch (e->key())
 	{
 	case Qt::Key_Return:
-		_canvas->setWindowFlags(Qt::Window);
-		_canvas->showFullScreen();
-		_player.Reszie();
-		break;
 	case Qt::Key_Escape:
-		_canvas->setWindowFlags(Qt::SubWindow);
-		_canvas->showNormal();
-		_player.Reszie();
+		SetFullScreen(!_fullScreen);
 		break;
 	};
 }
 
 bool QtPlayer::eventFilter(QObject *target, QEvent *e)
 {
-	if (target == _canvas)
+	if (target == _canvas && e->type() == QEvent::KeyPress)
 	{
-		if (e->type() == QEvent::KeyPress)
-		{
-			QKeyEvent *keyEvent = static_cast<QKeyEvent *>(e);
-			if (keyEvent->key() == Qt::Key_Escape)
-			{
-				_canvas->setWindowFlags(Qt::SubWindow);
-				_canvas->showNormal();
-				//_canvas->setGeometry(10, 10, 780, 450);
-				//变回原来大小，具体尺寸根据原来的定
-			}
-		}
+		QKeyEvent* keyEvent = static_cast<QKeyEvent *>(e);
+		keyPressEvent(keyEvent);
+	}
+	else if (e->type() == QEvent::MouseButtonDblClick)
+	{
+		QMouseEvent* mouseEvent = static_cast<QMouseEvent *>(e);
+		mouseDoubleClickEvent(mouseEvent);
 	}
 	return QMainWindow::eventFilter(target, e);
-
 }
